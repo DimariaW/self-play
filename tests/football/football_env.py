@@ -15,11 +15,15 @@ class BuiltinAI(agent.Agent):
     def sample(self, *args, **kwargs):
         pass
 
-    def set_weights(self, weights=None, model_id=None):
-        self.model_id = model_id
+    def set_weights(self, weights=None, model_index=None):
+        pass
 
     def get_weights(self):
         pass
+
+    @property
+    def model_id(self):
+        return "builtin_ai", 0
 
 
 class OpponentWrapper(gym.Wrapper):
@@ -33,15 +37,17 @@ class OpponentWrapper(gym.Wrapper):
         self.scoring = 0
 
     def reset(self, model_id: Tuple[str, int], weights) -> np.ndarray:
-        model_name, _ = model_id
+        model_name, model_index = model_id
         self.opponent_agent = self.opponents_pool[model_name]
-        self.opponent_agent.set_weights(weights, model_id)
-        self.scoring = 0
+        self.opponent_agent.set_weights(weights, model_index)
 
         obs: np.ndarray = self.env.reset()  # shape(2, ...)
         for _ in range(random.randint(0, 100)):
             obs, reward, done, info = self.env.step([0, 0])
         self.opponent_obs = obs[1:, ...]  # batch_size = 1
+
+        self.scoring = 0
+
         return obs[0, ...]
 
     def step(self, action: int) -> Tuple[np.ndarray, Dict[str, float], bool, Dict]:
@@ -61,6 +67,7 @@ class OpponentWrapper(gym.Wrapper):
 
         if done:
             info["win"] = int(self.scoring > 0)
+            info["opponent_id"] = self.opponent_agent.model_id
 
         return obs[0, ...], reward_infos, done, info
 

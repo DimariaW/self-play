@@ -252,7 +252,7 @@ class MemoryServer:
                 self.memory_replay.cache(data)
                 self.actor_communicator.send(conn, (cmd, "successfully receive episodes"))
 
-            elif cmd == "sample_infos":
+            elif cmd == "sample_infos":  # deprecated!
                 self._record_sample_info(data)
                 self.actor_communicator.send(conn, (cmd, "successfully record sample info"))
 
@@ -285,134 +285,6 @@ class MemoryServer:
             for value in values:
                 self.num_sample_info_received[key] += 1
                 self.sw.add_scalar(tag=key, scalar_value=value, global_step=self.num_sample_info_received[key])
-
-
-"""
-class TrajQueueMP(MemoryReplayBase):
-    def __init__(self,
-                 maxlen: int,
-                 device=torch.device("cpu"),
-                 batch_size: int = 64,
-                 num_batch_maker: int = 2,
-                 logger_file_path: str = None,
-                 file_level=logging.DEBUG
-                 ):
-        self.episodes = queue.Queue(maxsize=maxlen)
-        self.device = device
-        self.batch_size = batch_size
-
-        self.num_cached = 0
-
-        self.batch_maker = connection.MultiProcessJobExecutors(func=make_batch, send_generator=self.send_raw_batch(),
-                                                      postprocess=self.post_process,
-                                                      num=num_batch_maker,
-                                                      buffer_length=1,
-                                                      name_prefix="batch_maker",
-                                                      logger_file_path=logger_file_path,
-                                                      file_level=file_level)
-
-    def cache(self, episodes: List[List]):
-        for episode in episodes:
-            while True:
-                try:
-                    self.episodes.put(episode, timeout=0.1)
-                    self.num_cached += 1
-                    logging.debug(f"successfully cached episode num {self.num_cached}")
-                    break
-                except queue.Full:
-                    logging.critical(" generate rate is larger than consumer")
-
-    def recall(self):
-        return self.batch_maker.recv()
-
-    def send_raw_batch(self):
-        while True:
-            yield [self.episodes.get() for _ in range(self.batch_size)]
-
-    def start(self):
-        self.batch_maker.start()
-
-    def post_process(self, batch):
-        return utils.to_tensor(batch, unsqueeze=None, device=self.device)
-"""
-
-
-
-
-"""
-class MultiProcessBatcher:
-    def __init__(self,
-                 maxlen: int,
-                 device=torch.device("cpu"),
-                 batch_size: int = 192,
-                 forward_steps: int = 64,
-                 num_batch_maker: int = 2,
-                 use_queue: bool = True,
-                 logger_file_path: str = "./log/log.txt",
-                 file_level=logging.DEBUG
-                 ):
-        self.episodes = deque(maxlen=maxlen)
-        self.device = device
-        self.batch_size = batch_size
-        self.forward_steps = forward_steps
-
-        self.num_cached = 0
-
-        if not use_queue:
-            self.batch_maker = connection.MultiProcessJobExecutors(func=make_batch, send_generator=self.send_raw_batch(),
-                                                        post_process=self.post_process,
-                                                        num=num_batch_maker, buffer_length=1 + 8//num_batch_maker,
-                                                        num_receivers=1,
-                                                        name_prefix="batch_maker",
-                                                        logger_file_path=logger_file_path,
-                                                        file_level=file_level)
-        else:
-            self.batch_maker = connection.MultiProcessJobExecutors(func=make_batch, send_generator=self.send_raw_batch(),
-                                                          postprocess=self.post_process,
-                                                          num=num_batch_maker, buffer_length=1 + 8//num_batch_maker,
-                                                          name_prefix="batch_maker",
-                                                          logger_file_path=logger_file_path,
-                                                          file_level=file_level)
-
-    def cache(self, episodes: Union[List[List[Dict]], List[Dict]]):
-        if isinstance(episodes[0], list):
-            self.episodes.extend(episodes)
-            self.num_cached += len(episodes)
-            logging.debug(f"total cached episodes is {self.num_cached}")
-        elif isinstance(episodes[0], dict):
-            self.episodes.append(episodes)
-            self.num_cached += 1
-            logging.debug(f"total cached episodes is {self.num_cached}")
-        else:
-            raise TypeError("episodes must be list of traj or traj, traj itself is a list of dict")
-
-    def recall(self):
-        return self.batch_maker.recv()
-
-    def send_raw_batch(self):
-        while True:
-            yield [self.send_a_sample() for _ in range(self.batch_size)]
-
-    def send_a_sample(self):
-        while True:
-            ep_idx = random.randrange(len(self.episodes))
-            accept_rate = 1 - (len(self.episodes) - 1 - ep_idx) / self.episodes.maxlen
-            if random.random() < accept_rate:
-                ep = self.episodes[ep_idx]
-                st = random.randrange(
-                    1 + max(0, len(ep) - self.forward_steps))  # change start turn by sequence length
-                return ep[st:st+self.forward_steps]
-
-    def start(self):
-        self.batch_maker.start()
-
-    def post_process(self, batch):
-        return utils.to_tensor(batch, unsqueeze=None, device=self.device)
-
-    def __len__(self):
-        return len(self.episodes)
-"""
-
 
 
 

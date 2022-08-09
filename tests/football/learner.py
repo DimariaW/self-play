@@ -17,12 +17,12 @@ from tests.football.config import USE_BZ2
 
 class MemoryMain(core.MemoryMainBase):
     def main(self, queue_sender: mp.Queue):
-        device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         logging.info(f"the data will be in {device}")
 
-        traj_queue = mem.TrajQueueMP(maxlen=32,
+        traj_queue = mem.TrajQueueMP(maxlen=16,
                                      queue_sender=queue_sender,
-                                     batch_size=4,
+                                     batch_size=16,
                                      use_bz2=USE_BZ2,
                                      to_tensor=True,
                                      device=device,
@@ -30,7 +30,7 @@ class MemoryMain(core.MemoryMainBase):
                                      logger_file_dir=os.path.join(self.logger_file_dir, "batch_maker"))
 
         memory_server = mem.MemoryServer(traj_queue, self.port, actor_num=None,
-                                         tensorboard_dir=os.path.join(self.logger_file_dir, "sample_reward"))
+                                         tensorboard_dir=None)
         memory_server.run()
 
 
@@ -42,9 +42,9 @@ class LearnerMain(core.LearnerMainBase):
         tensor_receiver = self.create_receiver(queue_receiver, to_tensor=False)
 
         model = CNNModel((16, 72, 96), 19, name="cnn").to(device)
-        compressed_model_weights = np.load("./tests/football/kaggle_model/model_785914.npy", allow_pickle=True).item()
-        model.set_weights(pickle.loads(bz2.decompress(compressed_model_weights)))
-        logging.info("successfully loads weight from pretrained !")
+        # compressed_model_weights = np.load("./tests/football/kaggle_model/model_785914.npy", allow_pickle=True).item()
+        # model.set_weights(pickle.loads(bz2.decompress(compressed_model_weights)))
+        # logging.info("successfully loads weight from pretrained !")
 
         impala = alg.IMPALA(model, tensor_receiver,
                             lr=0.00019896, gamma=0.993, lbd=1, vf=0.5, ef=0.00087453,
@@ -60,7 +60,7 @@ class LeagueMain(core.LeagueMainBase):
         league = lg.League(queue_receiver, self.port,
                            cache_weights_intervals=1,
                            save_weights_dir=os.path.join(self.logger_file_dir, "model"),
-                           save_weights_intervals=1000,
+                           save_weights_intervals=10000,
                            tensorboard_dir=os.path.join(self.logger_file_dir, "eval_info"),
                            use_bz2=USE_BZ2)
         league.run()

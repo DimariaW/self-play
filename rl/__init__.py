@@ -7,6 +7,6 @@ from rl.train import train_main
 __all__ = ["ActorCommunicator", "MemoryServer", "League", "Model", "train_main"]
 '''
 
-from rl.model import Model
+from rl.model import Model, ModelValueLogit
 
-__all__ = ["Model"]
+__all__ = ["Model", "ModelValueLogit"]

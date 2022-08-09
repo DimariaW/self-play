@@ -79,7 +79,7 @@ class ImpalaCNN(rl.Model):
         return out
 
 
-class CNNModel(rl.Model):
+class CNNModel(rl.ModelValueLogit):
     def __init__(self, obs_shape=(16, 72, 96), act_dim=19, name: str = "cnn"):
         super().__init__(name)
         """

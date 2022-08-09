@@ -1,4 +1,5 @@
 import os
+import logging
 import multiprocessing as mp
 import functools
 import torch
@@ -7,7 +8,6 @@ from typing import List, Tuple, Union
 import rl.utils as utils
 from rl.connection import Receiver
 
-from rl.memory import MemoryServer, TrajList, TrajQueue, TrajQueueMP
 
 from rl.actor import ActorCreateBase, open_gather
 
@@ -28,53 +28,35 @@ class MainBase:
 
 
 class MemoryMainBase(MainBase):
-    def __init__(self, port: int, logger_file_dir=None):
+    def __init__(self, port: int, logger_file_dir=None, logger_file_level=logging.DEBUG):
         super().__init__("memory", logger_file_dir)
+        self.logger_file_level = logger_file_level
         self.port = port
 
     def __call__(self, queue_sender: mp.Queue):
-        """
-        自此函数中实例化MemoryServer对象，处理actor收集的数据.
-
-        the train function will use this function like bellowing:
-
-        import multiprocessing as mp
-        queue_sender = mp.Queue(maxsize=1)
-        mp.Process(target=actor_server_main, args=(sender,), daemon=False, name="actor_server").start()
-
-        :param queue_sender: used to cache data generated
-        :return: None
-        """
-        utils.set_process_logger(file_path=self.logger_file_path)
+        utils.set_process_logger(file_path=self.logger_file_path, file_level=self.logger_file_level)
         utils.wrap_traceback(self.main)(queue_sender)
 
     def main(self, queue_sender: mp.Queue):
+        """
+        自此函数中实例化MemoryServer对象，处理actor收集的数据.
+        """
         raise NotImplementedError
 
 
 class LearnerMainBase(MainBase):
-    def __init__(self, logger_file_dir=None):
+    def __init__(self, logger_file_dir=None, logger_file_level=logging.DEBUG):
         super().__init__("learner", logger_file_dir)
+        self.logger_file_level = logger_file_level
 
     def __call__(self, queue_receiver: mp.Queue, queue_senders: Union[List[mp.Queue], Tuple[mp.Queue]]):
-        """
-        在此函数中实例化myrl.Algorithm的子类， 并且调用run 函数运行.
-
-        the train function will use this function like bellowing:
-
-        import multiprocessing as mp
-        queue_receiver = mp.Queue(maxsize=1)
-        queue_send = mp.Queue(maxsize=1)
-        mp.Process(target=learner_main, args=(queue_receiver,queue_receiver), daemon=False, name="learner_main").start()
-
-        :param queue_receiver: used to receiver data
-        :param queue_senders: used to send model_weights
-        :return: None
-        """
-        utils.set_process_logger(file_path=self.logger_file_path)
+        utils.set_process_logger(file_path=self.logger_file_path, file_level=self.logger_file_level)
         utils.wrap_traceback(self.main)(queue_receiver, queue_senders)
 
     def main(self, queue_receiver: mp.Queue, qqueue_senders: Union[List[mp.Queue], Tuple[mp.Queue]]):
+        """
+        在此函数中实例化myrl.Algorithm的子类， 并且调用run 函数运行.
+        """
         raise NotImplementedError
 
     @staticmethod
@@ -87,28 +69,20 @@ class LearnerMainBase(MainBase):
 
 
 class LeagueMainBase(MainBase):
-    def __init__(self, port: int, logger_file_dir=None):
+    def __init__(self, port: int, logger_file_dir=None,  logger_file_level=logging.DEBUG):
         super().__init__("league", logger_file_dir)
+        self.logger_file_level = logger_file_level
         self.port = port
 
     def __call__(self, queue_receiver: mp.Queue):
-        """
-           the process to manage model weights.
 
-           the train function will use this function like bellowing:
-
-           import multiprocessing as mp
-           queue_send = mp.Queue(maxsize=1)
-           mp.Process(target=learner_main, args=(queue_send), daemon=False, name="league_main").start()
-
-           :param queue_receiver: the queue to send model weights
-           :return: None
-        """
-        utils.set_process_logger(file_path=self.logger_file_path)
-
+        utils.set_process_logger(file_path=self.logger_file_path, file_level=self.logger_file_level)
         utils.wrap_traceback(self.main)(queue_receiver)
 
     def main(self, queue_receiver: mp.Queue):
+        """
+        the process to manage model weights.
+        """
         raise NotImplementedError
 
     @staticmethod
