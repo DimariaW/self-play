@@ -11,7 +11,7 @@ import torch
 class ActorCreate(core.ActorCreateBase):
     def create_env_and_agent(self, gather_id: int = None, actor_id: int = None):
 
-        env = gfootball_env.create_environment(env_name="11_vs_11_kaggle_easy",
+        env = gfootball_env.create_environment(env_name="1_vs_1_hard",
                                                stacked=True,
                                                rewards="scoring,checkpoints",
                                                render=False,
@@ -49,17 +49,17 @@ if __name__ == "__main__":
     actor_sample = Actor(env_, agent_, num_steps=32)
 
     models_pool = [
-        (("cnn", 0), np.load("./easy_model/model_346346.npy", allow_pickle=True).item()),
-        (("cnn", 1), np.load("./hard_model/model_80031.npy", allow_pickle=True).item()),
-        (("cnn", 2), np.load("./hard_model/model_742227.npy", allow_pickle=True).item()),
-        (("builtin_ai", 0), None)
+        # (("cnn", 0), np.load("./easy_model/model_346346.npy", allow_pickle=True).item()),
+        # (("cnn", 1), np.load("./hard_model/model_80031.npy", allow_pickle=True).item()),
+        # (("cnn", 2), np.load("./hard_model/model_742227.npy", allow_pickle=True).item()),
+        (("builtin_ai", 0), {})
     ]
 
     model_id, weights = random.choice(models_pool)
     actor_sample.reset_env(model_id, weights)
 
-    model_id, weights = random.choice(models_pool[:3])
-    actor_sample.reset_agent(model_id, weights)
+    #model_id, weights = random.choice(models_pool[:3])
+    #actor_sample.reset_agent(model_id, weights)
 
     # predict_generator = actor_eval.predict_generator()
     sample_generator = actor_sample.sample_generator()
@@ -72,8 +72,8 @@ if __name__ == "__main__":
             model_id, weights = random.choice(models_pool)
             actor_sample.reset_env(model_id, weights)
 
-            model_id, weights = random.choice(models_pool[:3])
-            actor_sample.reset_agent(model_id, weights)
+            #model_id, weights = random.choice(models_pool[:3])
+            #actor_sample.reset_agent(model_id, weights)
 
 
 

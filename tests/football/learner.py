@@ -63,4 +63,5 @@ class LeagueMain(core.LeagueMainBase):
                            save_weights_intervals=10000,
                            tensorboard_dir=os.path.join(self.logger_file_dir, "eval_info"),
                            use_bz2=USE_BZ2)
+        league.add_opponent("builtin_ai", index=0, weights={}, winning_rate=0.)
         league.run()
