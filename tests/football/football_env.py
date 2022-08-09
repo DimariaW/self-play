@@ -42,7 +42,7 @@ class OpponentWrapper(gym.Wrapper):
         self.opponent_agent.set_weights(weights, model_index)
 
         obs: np.ndarray = self.env.reset()  # shape(2, ...)
-        for _ in range(random.randint(0, 100)):
+        for _ in range(random.randint(0, 20)):
             obs, reward, done, info = self.env.step([0, 0])
         self.opponent_obs = obs[1:, ...]  # batch_size = 1
 
