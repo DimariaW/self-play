@@ -205,8 +205,10 @@ class TrajQueueMP(TrajQueue):
                  use_bz2: bool = True,
                  to_tensor: bool = True,
                  device=torch.device("cpu"),
+                 # batch_maker args
                  num_batch_maker: int = 2,
                  logger_file_dir: str = None,
+                 logger_file_level=logging.DEBUG
                  ):
         super().__init__(maxlen, queue_sender, batch_size, use_bz2, to_tensor, device)
 
@@ -215,7 +217,8 @@ class TrajQueueMP(TrajQueue):
                                                                num=num_batch_maker,
                                                                queue_receiver=self.queue_sender,
                                                                name_prefix="batch_maker",
-                                                               logger_file_dir=logger_file_dir)
+                                                               logger_file_dir=logger_file_dir,
+                                                               file_level=logger_file_level)
 
     def start(self):
         self.batch_maker.start()
@@ -226,16 +229,10 @@ class MemoryServer:
                  memory_replay: MemoryReplayBase,
                  port: int,
                  actor_num=None,
-                 tensorboard_dir=None
                  ):
 
         self.actor_communicator = connection.QueueCommunicator(port, actor_num)
         self.memory_replay = memory_replay
-
-        if tensorboard_dir is not None:
-            self.sw = SummaryWriter(logdir=tensorboard_dir)
-
-        self.num_sample_info_received = defaultdict(lambda: 0)
         self.actor_num = actor_num
 
     def run(self):
@@ -245,16 +242,11 @@ class MemoryServer:
         while True:
             conn, (cmd, data) = self.actor_communicator.recv()
             """
-            cmd: Literal["episode", "sample_infos"]
+            cmd: Literal["episodes"]
             """
             logging.debug(cmd)
-            if cmd == "episodes":
-                self.memory_replay.cache(data)
-                self.actor_communicator.send(conn, (cmd, "successfully receive episodes"))
-
-            elif cmd == "sample_infos":  # deprecated!
-                self._record_sample_info(data)
-                self.actor_communicator.send(conn, (cmd, "successfully record sample info"))
+            self.memory_replay.cache(data)
+            self.actor_communicator.send(conn, (cmd, "successfully receive episodes"))
 
     def run_sync(self):
         self.actor_communicator.run_sync()
@@ -263,28 +255,19 @@ class MemoryServer:
         while True:
             conn, (cmd, data) = self.actor_communicator.recv()
             """
-            cmd: Literal["episode", "sample_info"]
+            cmd: Literal["episodes"]
             """
             logging.debug(cmd)
-            if cmd == "episodes":
-                self.memory_replay.cache(data)
-                conns.append(conn)
 
-                if len(conns) == self.actor_num:
-                    self.memory_replay.start()
-                    for conn in conns:
-                        self.actor_communicator.send(conn, (cmd, "successfully receive episodes"))
-                    conns = []
+            self.memory_replay.cache(data)
+            conns.append(conn)
 
-            elif cmd == "sample_infos":
-                self._record_sample_info(data)
-                self.actor_communicator.send(conn, (cmd, "successfully record sample infos"))
+            if len(conns) == self.actor_num:
+                self.memory_replay.start()
+                for conn in conns:
+                    self.actor_communicator.send(conn, (cmd, "successfully receive episodes"))
+                conns.clear()
 
-    def _record_sample_info(self, data: Dict[str, list]):
-        for key, values in data.items():
-            for value in values:
-                self.num_sample_info_received[key] += 1
-                self.sw.add_scalar(tag=key, scalar_value=value, global_step=self.num_sample_info_received[key])
 
 
 

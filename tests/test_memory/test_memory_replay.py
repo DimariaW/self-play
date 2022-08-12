@@ -1,6 +1,7 @@
 import logging
 import queue
 import time
+import os
 import torch
 import numpy as np
 import multiprocessing as mp
@@ -18,7 +19,8 @@ class MemoryMain(core.MemoryMainBase):
                                     num_batch_maker=3,
                                     use_bz2=False,
                                     to_tensor=True,
-                                    logger_file_dir="./log/test_traj_queue_mp/")
+                                    logger_file_dir=os.path.join(self.logger_file_dir, "batch_maker"),
+                                    logger_file_level=self.logger_file_level)
         traj_queue.start()
         for j in range(64 * 16):
             episode = [
@@ -26,6 +28,7 @@ class MemoryMain(core.MemoryMainBase):
                     for _ in range(64)
                         ]
             traj_queue.cache([(j, episode)])
+
         traj_queue.stop()
         time.sleep(10)
 
@@ -38,24 +41,11 @@ class LearnerMain(core.LearnerMainBase):
             while True:
                 _, tensor = tensor_receiver.recv()
                 num += 1
-                logging.debug(f"successfully receive {num}")
-                time.sleep(0.01)
-                queue_senders[0].put((False, tensor))
-                logging.debug(f"successfully put {num}")
+                logging.info(f"successfully receive {num}")
         except queue.Empty:
-            logging.debug("end receiving")
-            queue_senders[0].put((True, None))
+            logging.info("end receiving")
 
 
 class LeagueMain(core.LeagueMainBase):
-    def main(self, queue_sender: mp.Queue):
-        receiver = self.create_receiver(queue_sender, num_sender=1)
-        num = 0
-        try:
-            while True:
-                data = receiver.recv()
-                num += 1
-                logging.info(f"receive num {num}")
-                logging.info(list(data.keys()))
-        except queue.Empty:
-            logging.info("end receiving")
+    def main(self, queue_receiver: mp.Queue):
+        pass

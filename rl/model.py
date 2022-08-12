@@ -2,7 +2,8 @@ import torch
 import torch.nn as nn
 from collections import OrderedDict
 
-from typing import Tuple, Dict, Any, Union, List
+from typing import Dict, Tuple, List, Union
+#%% base model class
 
 
 class Model(nn.Module):
@@ -11,7 +12,7 @@ class Model(nn.Module):
         self.name = name
 
     def forward(self, *args, **kwargs):
-        pass
+        raise NotImplementedError
 
     def sync_weights_to(self, target_model: "Model", decay=0.0):
         """
@@ -33,14 +34,16 @@ class Model(nn.Module):
         for key in weights.keys():
             new_weights[key] = torch.from_numpy(weights[key])
         self.load_state_dict(new_weights)
+#%% a2c, impala, ppo model class, return value_infos and logits
 
 
 class ModelValueLogit(Model):
-    def forward(self, obs: Union[List, Tuple, Dict, torch.Tensor]) -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
+    def forward(self, obs: Union[Dict, Tuple, List, torch.Tensor]) -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
         """
         obs: batched input
         return: value_infos and logits, support multi-head value.
         """
         raise NotImplementedError
+
 
 

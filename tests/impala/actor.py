@@ -1,18 +1,18 @@
-import gym
 import torch
-
+import gym
 import rl.core as core
-from rl.agent import IMPALAAgent
-
-from tests.impala.env import EnvWrapper
-from tests.impala.model import Model
 
 
 class ActorCreate(core.ActorCreateBase):
     def create_env_and_agent(self, gather_id: int, actor_id: int):
-        env = gym.make("LunarLander-v2")
-        env = EnvWrapper(env)
+        from tests.test_env_models.env_model_gym import EnvWrapper, Model
+        from tests.impala.config import CONFIG
+        from rl.agent import IMPALAAgent
+
+        env = gym.make(CONFIG["env_name"])
+        env = EnvWrapper(env, reward_threshold=CONFIG["reward_threshold"])
         device = torch.device("cpu")
-        model = Model(8, 4, use_orthogonal_init=True, use_tanh=False).to(device)
+        model = Model(CONFIG["obs_dim"], CONFIG["num_act"], use_orthogonal_init=True, use_tanh=False).to(device)
         agent = IMPALAAgent(model, device)
         return env, agent
+

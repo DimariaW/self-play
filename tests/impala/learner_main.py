@@ -1,12 +1,16 @@
-
-from tests.impala.learner import MemoryMain, LearnerMain, LeagueMain
+from tests.impala.config import CONFIG, MEMORY_ADDRESS, MODEL_SERVER_ADDRESS, LEAGUE_ADDRESS
+from tests.impala.learner import MemoryMain, LearnerMain, LeagueMain, ModelServerMain
 from rl.core import train_main
 
 
 if __name__ == '__main__':
-    name = "lunar_lander"
-    mm_main1 = MemoryMain(7777, f"./log/{name}/mm1")
-    league_main = LeagueMain(7779, f"./log/{name}/")
+    name = CONFIG["env_name"]
+
+    mm_main = MemoryMain(MEMORY_ADDRESS[1], f"./log/{name}/")
+
+    model_server_main = ModelServerMain(MODEL_SERVER_ADDRESS[1], name="model_server", logger_file_dir=f"./log/{name}/")
+    league_main = LeagueMain(LEAGUE_ADDRESS[1], name="league", logger_file_dir=f"./log/{name}/")
+
     leaner_main = LearnerMain(f"./log/{name}/")
 
-    train_main(leaner_main, [mm_main1], [league_main], memory_buffer_length=4)
+    train_main(leaner_main, [mm_main], [model_server_main, league_main], memory_buffer_length=8)

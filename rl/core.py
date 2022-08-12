@@ -3,7 +3,7 @@ import logging
 import multiprocessing as mp
 import functools
 import torch
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Literal
 
 import rl.utils as utils
 from rl.connection import Receiver
@@ -11,7 +11,7 @@ from rl.connection import Receiver
 
 from rl.actor import ActorCreateBase, open_gather
 
-__all__ = ["ActorCreateBase", "MemoryMainBase", "LearnerMainBase", "LeagueMainBase", "open_gather", "train_main"]
+__all__ = ["ActorCreateBase", "MemoryMainBase", "LearnerMainBase", "ModelMainBase", "open_gather", "train_main"]
 
 
 class MainBase:
@@ -68,14 +68,15 @@ class LearnerMainBase(MainBase):
         return Receiver(queue_receiver, num_sender, postprocess=lambda data: (data[0], to_device(data[1])))
 
 
-class LeagueMainBase(MainBase):
-    def __init__(self, port: int, logger_file_dir=None,  logger_file_level=logging.DEBUG):
-        super().__init__("league", logger_file_dir)
-        self.logger_file_level = logger_file_level
+class ModelMainBase(MainBase):
+    def __init__(self, port: int, name: Literal["model_server", "league"],
+                 logger_file_dir=None,  logger_file_level=logging.DEBUG):
+        super().__init__(name, logger_file_dir)
         self.port = port
+        self.name = name
+        self.logger_file_level = logger_file_level
 
     def __call__(self, queue_receiver: mp.Queue):
-
         utils.set_process_logger(file_path=self.logger_file_path, file_level=self.logger_file_level)
         utils.wrap_traceback(self.main)(queue_receiver)
 
@@ -92,45 +93,52 @@ class LeagueMainBase(MainBase):
 
 def train_main(learner_main: LearnerMainBase,
                memory_mains: Union[List[MemoryMainBase], Tuple[MemoryMainBase]],
-               league_mains: Union[List[LeagueMainBase], Tuple[LeagueMainBase]],
+               model_mains: Union[List[ModelMainBase], Tuple[ModelMainBase]],
                memory_buffer_length=1):  # receiver and sender
 
     mp.set_start_method("spawn")
-
-    queue_receiver = mp.Queue(maxsize=memory_buffer_length)  # receiver batched tensor, when on policy, this can be set to 1
-
+    """
+    1. learner
+    """
+    queue_receiver = mp.Queue(maxsize=memory_buffer_length)
+    # receiver batched tensor, when on policy, this can be set to 1
     queue_senders = []
-    for _ in range(len(league_mains)):
+    for _ in range(len(model_mains)):
         queue_senders.append(mp.Queue(maxsize=1))  # the queue to send the newest data
-
     learner_process = mp.Process(target=learner_main, args=(queue_receiver, queue_senders),
                                  daemon=False, name="learner_main")
     learner_process.start()
-
-    league_processes = []
-    for i, league_main in enumerate(league_mains):
-        league_process = mp.Process(target=league_main, args=(queue_senders[i],),
-                                    daemon=False, name="league_main")
-        league_process.start()
-        league_processes.append(league_process)
-
+    """
+    model process
+    """
+    model_processes = []
+    for i, model_main in enumerate(model_mains):
+        model_process = mp.Process(target=model_main, args=(queue_senders[i],),
+                                   daemon=False, name=f"{model_main.name}_{i}")
+        model_process.start()
+        model_processes.append(model_process)
+    """
+    memory process
+    """
     memory_processes = []
     for i, memory_main in enumerate(memory_mains):
         memory_process = mp.Process(target=memory_main, args=(queue_receiver,),
                                     daemon=False, name=f"memory_main_{i}")
         memory_process.start()
         memory_processes.append(memory_process)
-
+    """
+    cleaning when done
+    """
     try:
         learner_process.join()
-        for league_process in league_processes:
-            league_process.join()
+        for model_process in model_processes:
+            model_process.join()
         for memory_process in memory_processes:
             memory_process.join()
     finally:
         learner_process.close()
-        for league_process in league_processes:
-            league_process.close()
+        for model_process in model_processes:
+            model_process.close()
         for memory_process in memory_processes:
             memory_process.close()
 
