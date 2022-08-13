@@ -58,5 +58,45 @@ class Model(model.ModelValueLogit):
         return {"reward": output[..., 0]}, output[..., 1:]  # value and logit, value 的最后一维度需要squeeze
 
 
+class ModelLSTM(model.ModelValueLogit):
+    def __init__(self, state_dim: int, num_act: int):
+        super().__init__()
+        self.fc1 = nn.Linear(state_dim, 128)
+        self.relu1 = nn.ReLU()
+        self.lstm = nn.RNNCell(input_size=128,
+                               hidden_size=128,
+                               nonlinearity="relu")
+        self.fc2 = nn.Linear(128, num_act)
+        self.hidden = None, None
+        self.state_dim = state_dim
+
+    def forward(self, obs: Dict) -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
+        observation = obs["observation"]  # shape(B, T, state_dim)
+        h = obs["hidden"]    # shape(B, T, 128)
+
+        shape = observation.shape
+        if len(observation.shape) == 3:
+            observation = observation.view(-1, self.state_dim)
+            h = h.view(-1, 128)
+            h1 = self.relu1(self.fc1(observation))
+            h = self.lstm(h1, h)
+            output = self.fc2(h)
+            output = output.view(*shape[:-1], -1)
+            return {"reward": output[..., 0]}, output[..., 1:]
+
+        h1 = self.relu1(self.fc1(observation))
+        h = self.lstm(h1, h)
+        self.hidden = h
+        output = self.fc2(h)
+        return {"reward": output[..., 0]}, output[..., 1:]
+
+    def init_hidden(self, batch_size: int, device):
+        return torch.zeros(batch_size, 128, device=device)
+
+    def get_hidden(self):
+        return self.hidden
+
+
+
 
 

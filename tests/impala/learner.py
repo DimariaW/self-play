@@ -7,7 +7,7 @@ import rl.memory as mem
 import rl.algorithm as alg
 import rl.league as lg
 
-from tests.test_env_models.env_model_gym import Model
+from tests.test_env_models.env_model_gym import Model, ModelLSTM
 from tests.impala.config import CONFIG, USE_BZ2
 
 
@@ -33,8 +33,8 @@ class LearnerMain(core.LearnerMainBase):
     def main(self, queue_receiver: mp.Queue, queue_senders):
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         tensor_receiver = self.create_receiver(queue_receiver)
-        model = Model(CONFIG["obs_dim"], CONFIG["num_act"], use_orthogonal_init=True, use_tanh=False).to(device)
-
+        # model = Model(CONFIG["obs_dim"], CONFIG["num_act"], use_orthogonal_init=True, use_tanh=False).to(device)
+        model = ModelLSTM(CONFIG["obs_dim"], CONFIG["num_act"]).to(device)
         impala = alg.IMPALA(model, queue_senders, tensor_receiver,
                             lr=2e-4, gamma=0.99, lbd=0.98, vf=0.5, ef=1e-4,
                             tensorboard_dir=os.path.join(self.logger_file_dir, "metrics"),

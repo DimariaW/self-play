@@ -4,7 +4,7 @@ from rl.core import train_main
 
 
 if __name__ == '__main__':
-    name = CONFIG["env_name"]
+    name = CONFIG["env_name"] + "_lstm"
 
     mm_main = MemoryMain(MEMORY_ADDRESS[1], f"./log/{name}/")
 

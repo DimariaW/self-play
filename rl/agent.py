@@ -30,7 +30,7 @@ class Agent:
     def model_id(self) -> Tuple[str, Optional[int]]:
         raise NotImplementedError
 
-    def init_hidden(self):
+    def init_hidden(self, batch_size: int):
         """
         function that should be implemented when model is rnn
         """
@@ -93,6 +93,16 @@ class IMPALAAgent(A2CAgent):
         log_prob = torch.log_softmax(logits, dim=-1)
         behavior_log_prob = torch.gather(log_prob, dim=-1, index=action_idx.unsqueeze(-1)).squeeze(-1)
         return {"action": action_idx.cpu().numpy(), "behavior_log_prob": behavior_log_prob.cpu().numpy()}
+
+    def get_hidden(self):
+        hidden = self.model.get_hidden()
+        if hidden is not None:
+            return utils.to_numpy(hidden)
+
+    def init_hidden(self, batch_size: int):
+        hidden = self.model.init_hidden(batch_size, torch.device("cpu"))
+        if hidden is not None:
+            return utils.to_numpy(hidden)
 
 
 class PPOAgent(A2CAgent):

@@ -13,7 +13,7 @@ import multiprocessing as mp
 
 from collections import defaultdict
 
-from rl.utils import batchify, set_process_logger, wrap_traceback
+from rl.utils import batchify, set_process_logger, wrap_traceback, get_element_from_batch
 
 
 #%%
@@ -80,10 +80,10 @@ class Actor:
         """
         model_id: Tuple[str, int], model_weights: Mapping[str, np.ndarray]
         """
-        hidden = self.agent.init_hidden()
+        hidden = self.agent.init_hidden(batch_size=1)
         obs = self.env.reset(*args, **kwargs)
         if hidden is not None:
-            self.obs = {"observation": obs, "hidden": hidden}
+            self.obs = {"observation": obs, "hidden": get_element_from_batch(hidden, 0)}
         else:
             self.obs = obs
         self.done = False
@@ -95,17 +95,6 @@ class Actor:
         assert(self.agent.model_id[0] = model_id[0])
         """
         self.agent.set_weights(model_weights, model_id[1])
-
-    def get_first_element(self, info: Dict):
-        first_element_info = {}
-        for key, value in info.items():
-            if isinstance(value, dict):
-                first_element_info[key] = self.get_first_element(value)
-            elif isinstance(value, np.ndarray):
-                first_element_info[key] = value[0]
-            else:
-                raise ValueError(f"unrecognized value type {type(value)}")
-        return first_element_info
 
     def sample(self):
         # episode generation
@@ -119,13 +108,13 @@ class Actor:
             moment['observation'] = self.obs
             # sample from batch obs and get hidden and action
             action_info_batched = self.agent.sample(batchify([self.obs], unsqueeze=0))
-            action_info = self.get_first_element(action_info_batched)
+            action_info = get_element_from_batch(action_info_batched, 0)
             moment.update(action_info)
             # step
             obs, reward_info, self.done, self.truncated, info = self.env.step(moment['action'])
             hidden = self.agent.get_hidden()
             if hidden is not None:
-                self.obs = {"observation": obs, "hidden": hidden}
+                self.obs = {"observation": obs, "hidden": get_element_from_batch(hidden, 0)}
             else:
                 self.obs = obs
             step += 1
@@ -180,11 +169,11 @@ class Actor:
         while num_episodes < self.num_episodes:
 
             action_info_batched = self.agent.sample(batchify([self.obs], unsqueeze=0))
-            action_info = self.get_first_element(action_info_batched)
+            action_info = get_element_from_batch(action_info_batched, 0)
             obs, reward_info, self.done, self.truncated, info = self.env.step(action_info['action'])
             hidden = self.agent.get_hidden()
             if hidden is not None:
-                self.obs = {"observation": obs, "hidden": hidden}
+                self.obs = {"observation": obs, "hidden": get_element_from_batch(hidden, 0)}
             else:
                 self.obs = obs
             self._update_current_episode_info(reward_info)

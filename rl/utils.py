@@ -101,6 +101,45 @@ def to_tensor(x: Union[List, Dict, Tuple, np.ndarray, torch.Tensor], unsqueeze=N
         raise NotImplementedError(f"do not support convert type: {type(x)} to tensor")
 
 
+def to_numpy(x: Union[List, Dict, Tuple, np.ndarray, torch.Tensor], unsqueeze=None):
+    if isinstance(x, np.ndarray):
+        if x.dtype in [np.int32, np.int64]:
+            t = x.astype(np.int64)
+        else:
+            t = x.astype(np.float32)
+        return t if unsqueeze is None else t[np.newaxis, ...]
+
+    elif isinstance(x, torch.Tensor):
+        if x.dtype in [torch.int32, torch.int64]:
+            t = x.cpu().numpy().astype(np.int64)
+        else:
+            t = x.cpu().numpy().astype(np.float32)
+        return t if unsqueeze is None else t[np.newaxis, ...]
+
+    elif isinstance(x, (list, tuple)):
+        return type(x)(to_numpy(xx, unsqueeze) for xx in x)
+
+    elif isinstance(x, dict):
+        return type(x)((key, to_numpy(xx, unsqueeze)) for key, xx in x.items())
+
+    else:
+        raise NotImplementedError(f"do not support convert type: {type(x)} to numpy")
+
+
+def get_element_from_batch(x: Union[List, Dict, Tuple, np.ndarray, torch.Tensor], index):
+    if isinstance(x, (np.ndarray, torch.Tensor)):
+        return x[index]
+
+    elif isinstance(x, (list, tuple)):
+        return type(x)(get_element_from_batch(xx, index) for xx in x)
+
+    elif isinstance(x, dict):
+        return type(x)((key, get_element_from_batch(xx, index)) for key, xx in x.items())
+
+    else:
+        raise NotImplementedError(f"do not support get element from type: {type(x)}")
+
+
 def batchify(x: Union[List, Tuple], unsqueeze=None) -> Union[List, Tuple, Dict, np.ndarray]:
     if isinstance(x[0], (list, tuple)):
         temp = []
