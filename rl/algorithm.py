@@ -312,17 +312,14 @@ class IMPALA(ActorCriticBase):
                                                    clipped_rho, clipped_c)
             # logging.debug(f" {key} adv is {torch.mean(vtrace_adv)}")
             # logging.debug(f" {key} value is {torch.mean(vtrace_value)}")
-            if key in self.only_critic:
-                actor_loss_local = 0
-            else:
-                actor_loss_local = torch.sum(-action_log_prob * clipped_rho * vtrace_adv)
             critic_loss_local = self.critic_loss_fn(value, vtrace_value)
-
-            actor_loss += actor_loss_local
             critic_loss += critic_loss_local
+            critic_losses[key + "_critic_loss"] = critic_loss_local.item()
 
-            actor_losses[key+"_actor_loss"] = actor_loss_local.item()
-            critic_losses[key+"_critic_loss"] = critic_loss_local.item()
+            if key not in self.only_critic:
+                actor_loss_local = torch.sum(-action_log_prob * clipped_rho * vtrace_adv)
+                actor_loss += actor_loss_local
+                actor_losses[key+"_actor_loss"] = actor_loss_local.item()
 
         if self.upgo_key is not None:
             for key in self.upgo_key:
