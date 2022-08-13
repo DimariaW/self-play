@@ -171,8 +171,8 @@ class Algorithm:
              gamma: float, lbd: float):
 
         target_value = []
-        next_value = 0
-        next_target = 0
+        next_value = torch.tensor(0, device=value.device)
+        next_target = torch.tensor(0, device=value.device)
         for i in range(value.shape[1] - 1, -1, -1):
             curr_reward = reward[:, i]
             curr_done = done[:, i]

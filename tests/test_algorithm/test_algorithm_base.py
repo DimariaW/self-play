@@ -34,7 +34,7 @@ def test_gae_vtrace_upgo():
     print(end-beg, torch.sum(vtrace_value-v1))
 
     beg = time.time()
-    upgo_adv, upgo_value = Algorithm.vtrace(value, reward, done, bootstrap_mask, gamma, lbd, rho, c)
+    upgo_adv, upgo_value = Algorithm.upgo(value, reward, done, bootstrap_mask, gamma, lbd)
     end = time.time()
     print(end - beg)
 
