@@ -233,6 +233,8 @@ class ActorCriticBase(Algorithm):
         raise NotImplementedError
 
     def run(self):
+        tag = "learn_info"
+
         for queue_sender in self.queue_senders:
             send_with_stop_flag(queue_sender, False, (self.index, self.model))
 
@@ -245,7 +247,7 @@ class ActorCriticBase(Algorithm):
                 logging.info(f"update num: {index}, {learn_info}")
                 if hasattr(self, "sw"):
                     for key, value in learn_info.items():
-                        self.sw.add_scalar(key, value, index)
+                        self.sw.add_scalar(f"{tag}/{key}", value, index)
 
 
 class IMPALA(ActorCriticBase):

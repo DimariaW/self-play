@@ -96,7 +96,7 @@ class ModelServer(ModelServerBase):
         model_id = (self.model_name, self.cached_weights_index)
         weights = self.cached_weights
         self.actor_communicator.send(conn, (cmd, (model_id, weights)))
-        logging.debug(f"successfully get and response (cmd: {cmd}, data: {data})")
+        logging.debug(f"receive (cmd: {cmd}, data: {data}), send (cmd: {cmd}, data: {model_id})")
 
 
 class ModelServer4RecordAndEval(ModelServer):
@@ -139,7 +139,7 @@ class ModelServer4RecordAndEval(ModelServer):
         for info in data:
             self._record_info(info, cmd)
         self.actor_communicator.send(conn, (cmd, "successfully send infos"))
-        logging.debug(f"successfully record {cmd}, {data}")
+        logging.debug(f"receive cmd: {cmd}, send (cmd: {cmd}, data: successfully send infos)")
 
     def _record_info(self, info: Dict[str, Any], tag):
         self.num_received_infos[tag] += 1

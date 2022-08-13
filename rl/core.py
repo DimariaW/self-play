@@ -9,9 +9,9 @@ import rl.utils as utils
 from rl.connection import Receiver
 
 
-from rl.actor import ActorCreateBase, open_gather
+from rl.actor import ActorMainBase, open_gather
 
-__all__ = ["ActorCreateBase", "MemoryMainBase", "LearnerMainBase", "ModelMainBase", "open_gather", "train_main"]
+__all__ = ["ActorMainBase", "MemoryMainBase", "LearnerMainBase", "ModelServerMainBase", "open_gather", "train_main"]
 
 
 class MainBase:
@@ -68,7 +68,7 @@ class LearnerMainBase(MainBase):
         return Receiver(queue_receiver, num_sender, postprocess=lambda data: (data[0], to_device(data[1])))
 
 
-class ModelMainBase(MainBase):
+class ModelServerMainBase(MainBase):
     def __init__(self, port: int, name: Literal["model_server", "league"],
                  logger_file_dir=None,  logger_file_level=logging.DEBUG):
         super().__init__(name, logger_file_dir)
@@ -93,7 +93,7 @@ class ModelMainBase(MainBase):
 
 def train_main(learner_main: LearnerMainBase,
                memory_mains: Union[List[MemoryMainBase], Tuple[MemoryMainBase]],
-               model_mains: Union[List[ModelMainBase], Tuple[ModelMainBase]],
+               model_server_mains: Union[List[ModelServerMainBase], Tuple[ModelServerMainBase]],
                memory_buffer_length=1):  # receiver and sender
 
     mp.set_start_method("spawn")
@@ -103,7 +103,7 @@ def train_main(learner_main: LearnerMainBase,
     queue_receiver = mp.Queue(maxsize=memory_buffer_length)
     # receiver batched tensor, when on policy, this can be set to 1
     queue_senders = []
-    for _ in range(len(model_mains)):
+    for _ in range(len(model_server_mains)):
         queue_senders.append(mp.Queue(maxsize=1))  # the queue to send the newest data
     learner_process = mp.Process(target=learner_main, args=(queue_receiver, queue_senders),
                                  daemon=False, name="learner_main")
@@ -111,12 +111,12 @@ def train_main(learner_main: LearnerMainBase,
     """
     model process
     """
-    model_processes = []
-    for i, model_main in enumerate(model_mains):
+    model_server_processes = []
+    for i, model_main in enumerate(model_server_mains):
         model_process = mp.Process(target=model_main, args=(queue_senders[i],),
                                    daemon=False, name=f"{model_main.name}_{i}")
         model_process.start()
-        model_processes.append(model_process)
+        model_server_processes.append(model_process)
     """
     memory process
     """
@@ -131,13 +131,13 @@ def train_main(learner_main: LearnerMainBase,
     """
     try:
         learner_process.join()
-        for model_process in model_processes:
+        for model_process in model_server_processes:
             model_process.join()
         for memory_process in memory_processes:
             memory_process.join()
     finally:
         learner_process.close()
-        for model_process in model_processes:
+        for model_process in model_server_processes:
             model_process.close()
         for memory_process in memory_processes:
             memory_process.close()

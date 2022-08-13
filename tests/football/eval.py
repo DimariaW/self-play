@@ -1,4 +1,4 @@
-from tests.football.actor import ActorCreate
+from tests.football.actor import ActorMain
 import rl.actor as rl_actor
 import rl.utils as utils
 import logging
@@ -8,7 +8,7 @@ import pickle
 import bz2
 
 utils.set_process_logger()
-env, agent = ActorCreate().create_env_and_agent()
+env, agent = ActorMain().create_env_and_agent()
 env.render()
 
 actor = rl_actor.Actor(env, agent, num_episodes=10)

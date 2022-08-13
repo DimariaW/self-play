@@ -1,11 +1,11 @@
-from tests.tamakEriFever.actor import ActorCreate
+from tests.tamakEriFever.actor import ActorMain
 import numpy as np
 import rl.utils as utils
 import logging
 from tqdm import tqdm
 
 utils.set_process_logger()
-env, agent = ActorCreate().create_env_and_agent()
+env, agent = ActorMain().create_env_and_agent()
 env.render()
 #agent.set_weights(np.load("./easy_model/model_346346.npy", allow_pickle=True).item())
 agent.set_weights(np.load("./hard_model/model_80031.npy", allow_pickle=True).item())

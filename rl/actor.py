@@ -22,7 +22,7 @@ class Env(Protocol):
         ...
 
     def step(self, action) -> Tuple[Any, Dict[str, float], bool, bool, Dict[str, Any]]:
-        # discrete action space, return next_obs, reward_infos, done, info
+        # discrete action space, return next_obs, reward_infos, done, truncated, info
         ...
 
 
@@ -59,12 +59,8 @@ class Actor:
                  num_episodes: int = 0,
                  ):
         """
-        一次采样至少num_steps步，
-        至少采样num_episodes个完整的episode,在steps步之后，
-        若get_full_episode等于True,继续采样一个完整的episode
-
         :param env:   gym api
-        :param agent: 接受batched np.array 作为输入, 返回action_info, 其中必须有action字段
+        :param agent: 接受batched np.ndarray 作为输入, 返回action_info, 其中必须有action字段
         :param num_steps: 采用当前模型采样num_steps步, used for sample
         :param num_episodes: 采样num_episodes个完整的episode, used for predict
         """
@@ -230,11 +226,7 @@ class Actor:
 
 #%%
 """
-sample actor client:
-1. request latest model id and weights (and opponent model id and weights)
-for loop:
-    episodes: send model_index and episode and request latest model id and weights
-    sample_infos: send infos (and request opponent)
+编程规范: 对每个通信写logging.debug, 格式为send ..., receive ..., 写到基类中。
 """
 
 
@@ -253,7 +245,7 @@ class ActorClientBase:
                  queue_gather2actor: mp.Queue,
                  queue_actor2gather: mp.Queue,
                  use_bz2: bool,
-                 self_play: bool = False):
+                 self_play: bool):
 
         self.actor_id = actor_id
         self.actor = actor
@@ -262,21 +254,37 @@ class ActorClientBase:
         self.use_bz2 = use_bz2
         self.self_play = self_play
 
-    def _request_weights(self, data: Literal["latest", "sample_opponent", "eval_opponent"]):
+    def _request_weights(self, cmd: Literal["model"], data: Literal["latest", "sample_opponent", "eval_opponent"]):
         """
         1. request weights
         """
         cmd, (model_id, weights) = send_with_sender_id_and_receive(self.queue_actor2gather,
                                                                    self.queue_gather2actor,
-                                                                   self.actor_id, ("model", data))
-        logging.debug(f"successfully send cmd: model, data: {data} and receive model id: {model_id}")
+                                                                   self.actor_id,
+                                                                   (cmd, data))
+        logging.debug(f"send (cmd: {cmd}, data: {data}), receive (cmd: {cmd}, data: {model_id})")
         """
         2. decompress?
         """
         if weights is not None and self.use_bz2:
             weights = pickle.loads(bz2.decompress(weights))
-
         return model_id, weights
+
+    def send_infos(self, cmd: Literal["sample_infos", "eval_infos"], data):
+        cmd, msg = send_with_sender_id_and_receive(self.queue_actor2gather,
+                                                   self.queue_gather2actor,
+                                                   sender_id=self.actor_id,
+                                                   data=(cmd, data))
+        logging.debug(f"send cmd: {cmd}, receive: {msg}")
+
+    def send_episodes(self, cmd: Literal["episodes"], data):
+        if self.use_bz2:
+            data = bz2.compress(pickle.dumps(data))
+        cmd, msg = send_with_sender_id_and_receive(self.queue_actor2gather,
+                                                   self.queue_gather2actor,
+                                                   self.actor_id,
+                                                   (cmd, (self.actor.agent.model_id[1], data)))
+        logging.debug(f"send cmd: {cmd}, receive: {msg}")
 
     def run(self):
         if not self.self_play:
@@ -294,10 +302,10 @@ class ActorClientBase:
 class ActorClientSampler(ActorClientBase):
     def _run(self):
         cmd2func = {
-            "sample_infos": self.send_sample_infos,
-            "episodes": self.send_episodes_and_request_agent
+            "episodes": self.send_episodes_and_reset_agent,
+            "sample_infos": self.send_sample_infos_and_reset_env,
         }
-        model_id, weights = self._request_weights("latest")
+        model_id, weights = self._request_weights("model", "latest")
         self.actor.reset_agent(model_id, weights)
         self.actor.reset_env()
 
@@ -307,50 +315,38 @@ class ActorClientSampler(ActorClientBase):
 
     def _run_self_play(self):
         cmd2func = {
-            "sample_infos": self.send_sample_infos_and_request_opponent,
-            "episodes": self.send_episodes_and_request_agent
+            "episodes": self.send_episodes_and_reset_agent,
+            "sample_infos": self.send_sample_infos_and_reset_env,
         }
-        model_id, weights = self._request_weights("latest")
+        model_id, weights = self._request_weights("model", "latest")
         self.actor.reset_agent(model_id, weights)
-        model_id, weights = self._request_weights("sample_opponent")
+        model_id, weights = self._request_weights("model", "sample_opponent")
         self.actor.reset_env(model_id, weights)
 
         sample_generator = self.actor.sample_generator()
         for cmd, data in sample_generator:
             cmd2func[cmd](cmd, data)
 
-    def send_episodes_and_request_agent(self, cmd, data):
-        if self.use_bz2:
-            data = bz2.compress(pickle.dumps(data))
-        cmd, msg = send_with_sender_id_and_receive(self.queue_actor2gather,
-                                                   self.queue_gather2actor,
-                                                   self.actor_id,
-                                                   (cmd, (self.actor.agent.model_id[1], data)))
-        logging.debug(f"send cmd: {cmd}, response: {msg}")
-
-        model_id, weights = self._request_weights("latest")
+    def send_episodes_and_reset_agent(self, cmd, data):
+        self.send_episodes(cmd, data)
+        model_id, weights = self._request_weights("model", "latest")
         self.actor.reset_agent(model_id, weights)
 
-    def send_sample_infos(self, cmd, data):
-        cmd, msg = send_with_sender_id_and_receive(self.queue_actor2gather,
-                                                   self.queue_gather2actor,
-                                                   sender_id=self.actor_id,
-                                                   data=(cmd, data))
-        logging.debug(f"send cmd: {cmd}, response: {msg}")
-        self.actor.reset_env()
-
-    def send_sample_infos_and_request_opponent(self, cmd, data):
-        self.send_sample_infos(cmd, data)
-        model_id, weights = self._request_weights("sample_opponent")
-        self.actor.reset_env(model_id, weights)
+    def send_sample_infos_and_reset_env(self, cmd, data):
+        self.send_infos(cmd, data)
+        if self.self_play:
+            model_id, weights = self._request_weights("model", "sample_opponent")
+            self.actor.reset_env(model_id, weights)
+        else:
+            self.actor.reset_env()
 
 
 class ActorClientEvaluator(ActorClientBase):
     def _run(self):
         cmd2func = {
-            "eval_infos": self.send_eval_infos_and_request_agent
+            "eval_infos": self.send_eval_infos_and_reset_agent_env
         }
-        model_id, weights = self._request_weights("latest")
+        model_id, weights = self._request_weights("model", "latest")
         self.actor.reset_agent(model_id, weights)
         self.actor.reset_env()
 
@@ -360,43 +356,32 @@ class ActorClientEvaluator(ActorClientBase):
 
     def _run_self_play(self):
         cmd2func = {
-            "eval_infos": self.send_eval_infos_and_request_agent_and_opponent
+            "eval_infos": self.send_eval_infos_and_reset_agent_env
         }
-        model_id, weights = self._request_weights("latest")
+        model_id, weights = self._request_weights("model", "latest")
         self.actor.reset_agent(model_id, weights)
-        model_id, weights = self._request_weights("eval_opponent")
+        model_id, weights = self._request_weights("model", "eval_opponent")
         self.actor.reset_env(model_id, weights)
 
         predict_generator = self.actor.predict_generator()
         for cmd, data in predict_generator:
             cmd2func[cmd](cmd, data)
 
-    def send_eval_infos_and_request_agent(self, cmd, data):
-        cmd, msg = send_with_sender_id_and_receive(self.queue_actor2gather,
-                                                   self.queue_gather2actor,
-                                                   sender_id=self.actor_id,
-                                                   data=(cmd, data))
-        logging.debug(f"send cmd: {cmd}, response: {msg}")
-
-        self.actor.reset_env()
-        model_id, weights = self._request_weights("latest")
+    def send_eval_infos_and_reset_agent_env(self, cmd, data):
+        self.send_infos(cmd, data)
+        model_id, weights = self._request_weights("model", "latest")
         self.actor.reset_agent(model_id, weights)
+        if self.self_play:
+            model_id, weights = self._request_weights("model", "eval_opponent")
+            self.actor.reset_env(model_id, weights)
+        else:
+            self.actor.reset_env()
 
-    def send_eval_infos_and_request_agent_and_opponent(self, cmd, data):
-        cmd, msg = send_with_sender_id_and_receive(self.queue_actor2gather,
-                                                   self.queue_gather2actor,
-                                                   sender_id=self.actor_id,
-                                                   data=(cmd, data))
-        logging.debug(f"send cmd: {cmd}, response: {msg}")
 
-        model_id, weights = self._request_weights("eval_opponent")
-        self.actor.reset_env(model_id, weights)
-        model_id, weights = self._request_weights("latest")
-        self.actor.reset_agent(model_id, weights)
 #%% core class, used as entry function
 
 
-class ActorCreateBase:
+class ActorMainBase:
     def __init__(self, num_steps: int = 32, logger_file_dir: str = None):
         """
         the class of create actor and run sampling or predicting.
@@ -449,10 +434,6 @@ class ActorCreateBase:
 
 
 #%%
-"""
-logic of gather
-cache model, opponent model, sample infos and eval infos
-"""
 
 
 def send(queue_sender: mp.Queue, data: Tuple[str, Any],
@@ -461,23 +442,39 @@ def send(queue_sender: mp.Queue, data: Tuple[str, Any],
 
 
 class GatherBase:
-    def __init__(self, gather_id: int, num_actors: int,
-                 model_conn: connection.PickledConnection,
+    """
+    request latest model from model_server_conn
+    request eval or sample opponent model from league_conn
+    send eval or sample infos to league_conn
+    send episodes to memory_server_conn
+    """
+    def __init__(self,
+                 gather_id: int,
+                 role: Literal["sampler", "evaluator"],
+                 num_actors: int,
                  league_conn: connection.PickledConnection,
-                 func: ActorCreateBase, use_bz2=True, self_play=False):
+                 memory_server_conn: Optional[connection.PickledConnection],
+                 model_server_conn: connection.PickledConnection,
+                 actor_main: ActorMainBase,
+                 use_bz2,
+                 self_play):
         """
         :param gather_id: the id of gather
+        :param role: the role of gather.
         :param num_actors: the actors that this gather control
-        :param league_conn: used to request model and send infos
-        :param func: func used to create actors in daemon process
+        :param league_conn: used to request model, send infos
+        :param actor_main: func used to create actors in daemon process
         :param use_bz2: compress model and episode or not
         """
         self.gather_id = gather_id
+        self.role = role
         self.num_actors = num_actors
 
-        self.model_conn = model_conn
         self.league_conn = league_conn
-        self.func = func
+        self.memory_server_conn = memory_server_conn
+        self.model_server_conn = model_server_conn
+
+        self.actor_main = actor_main
         self.use_bz2 = use_bz2
         self.self_play = self_play
 
@@ -491,21 +488,26 @@ class GatherBase:
         self.opponent_id = None
         self.opponent_weights = None
         self.opponent_num_sent = 0
+        self.max_opponent_num_sent = 1  # send opponent weights only once
 
         # infos
         self.infos: List[Dict[str, Any]] = []
-        self.max_infos_length = self.num_actors
+        self.max_infos_length = 1
+
+        # episodes
+        self.episodes = []
+        self.max_episodes_length = self.num_actors
 
         # communicate queues
         self.queue_gather2actors = []
         self.queue_actor2gather = mp.Queue(maxsize=self.num_actors)
-
-    def _create_actors(self, actor_role):
+        # start actor process
         for i in range(self.num_actors):
             self.queue_gather2actors.append(mp.Queue(maxsize=1))
-            mp.Process(target=self.func, args=((self.gather_id, i, actor_role, self.use_bz2, self.self_play),
-                                               self.queue_gather2actors[i],
-                                               self.queue_actor2gather),
+            mp.Process(target=self.actor_main, args=(
+                                                     (self.gather_id, i, self.role, self.use_bz2, self.self_play),
+                                                     self.queue_gather2actors[i],
+                                                     self.queue_actor2gather),
                        name=f"gather_{self.gather_id}_actor_{i}", daemon=True).start()
 
     def run(self):
@@ -520,118 +522,90 @@ class GatherBase:
     def _run_self_play(self):
         raise NotImplementedError
 
-    def _request_model_and_set(self, cmd, data):  # model, latest
-        _, (model_id, weights) = connection.send_recv(self.model_conn, (cmd, data))
+    def _request_model_and_reset(self, cmd, data):  # model, latest
+        cmd, (model_id, weights) = connection.send_recv(self.model_server_conn, (cmd, data))
         self.model_id = model_id
         self.weights = weights
         self.num_sent = 0
-        logging.debug(f"send cmd {cmd}, data {data}, get model_id {model_id}")
+        logging.debug(f"send (cmd: {cmd}, data: {data}), get (cmd:{cmd}, data:{model_id}")
 
-    def _request_opponent_model_and_set(self, cmd, data):  # model, eval_opponent, sample_opponent
-        _, (model_id, weights) = connection.send_recv(self.league_conn, (cmd, data))
+    def _request_opponent_model_and_reset(self, cmd, data):  # model, eval_opponent, sample_opponent
+        cmd, (model_id, weights) = connection.send_recv(self.league_conn, (cmd, data))
         self.opponent_id = model_id
         self.opponent_weights = weights
         self.opponent_num_sent = 0
-        logging.debug(f"send cmd {cmd}, data {data}, get model_id {model_id}")
+        logging.debug(f"send (cmd: {cmd}, data: {data}), get (cmd:{cmd}, data:{model_id}")
 
     def _run_model(self, actor_id, cmd, data):  # model, latest, sample_opponent, eval_opponent
         if data == "latest":
             if self.num_sent >= self.max_num_sent:
-                self._request_model_and_set(cmd, data)
+                self._request_model_and_reset(cmd, data)
 
             send(self.queue_gather2actors[actor_id], (cmd, (self.model_id, self.weights)))
             self.num_sent += 1
+            logging.debug(f" receive (cmd: {cmd}, data: {data}), send (cmd: {cmd}, data: {self.model_id},"
+                          f"num_sent: {self.num_sent}")
 
         elif data in ["sample_opponent", "eval_opponent"]:
-            if self.opponent_num_sent >= self.max_num_sent:
-                self._request_opponent_model_and_set(cmd, data)
+            if self.opponent_num_sent >= self.max_opponent_num_sent:
+                self._request_opponent_model_and_reset(cmd, data)
 
             send(self.queue_gather2actors[actor_id], (cmd, (self.opponent_id, self.opponent_weights)))
             self.opponent_num_sent += 1
-
-        logging.debug(f"get cmd is {cmd}, data is {data}, send times is {self.opponent_num_sent}")
+            logging.debug(f" receive (cmd: {cmd}, data: {data}), send (cmd: {cmd}, data: {self.model_id},"
+                          f"num_sent: {self.opponent_num_sent}")
 
     def _run_infos(self, actor_id, cmd, data):  # sample_infos, eval_infos
         self.infos.append(data)
+        send(self.queue_gather2actors[actor_id], (cmd, f"successfully receive {cmd}"))
+        logging.debug(f"receive {cmd}, info length is {len(self.infos)}")
 
         if len(self.infos) >= self.max_infos_length:
             cmd, msg = connection.send_recv(self.league_conn, (cmd, self.infos))
-            logging.debug(f"cmd:{cmd}, msg:{msg}")
+            logging.debug(f"send cmd:{cmd}, receive msg:{msg}")
             self.infos.clear()
-
-        send(self.queue_gather2actors[actor_id], (cmd, f"successfully receive {cmd}"))
-        logging.debug(f"successfully cache {cmd}, length is {len(self.infos)}")
-
-
-class GatherSampler(GatherBase):
-    def __init__(self, gather_id: int, num_actors: int,
-                 model_conn: connection.PickledConnection,
-                 league_conn: connection.PickledConnection,
-                 memory_server_conn: connection.PickledConnection,
-                 func: ActorCreateBase,
-                 use_bz2=True,
-                 self_play=False
-                 ):
-        super().__init__(gather_id, num_actors, model_conn, league_conn, func, use_bz2, self_play)
-        self.actor_role = "sampler"
-        self.memory_server_conn = memory_server_conn  # send episodes and sample_infos
-        # episodes
-        self.episodes = []
-        self.max_episodes_length = self.num_actors
-
-        self._create_actors(self.actor_role)
-
-    def _run(self):
-        self._request_model_and_set("model", "latest")
-
-        cmd2func = {
-            "model": self._run_model,
-            "episodes": self._run_episodes,
-            "sample_infos": self._run_infos
-        }
-        while True:
-            actor_id, (cmd, data) = self.queue_actor2gather.get()
-            cmd2func[cmd](actor_id, cmd, data)
-
-    def _run_self_play(self):
-        self._request_model_and_set("model", "latest")
-        self._request_opponent_model_and_set("model", "sample_opponent")
-
-        cmd2func = {
-            "model": self._run_model,
-            "episodes": self._run_episodes,
-            "sample_infos": self._run_infos
-        }
-        while True:
-            actor_id, (cmd, data) = self.queue_actor2gather.get()
-            cmd2func[cmd](actor_id, cmd, data)
 
     def _run_episodes(self, actor_id, cmd, data):
         self.episodes.append(data)
+        send(self.queue_gather2actors[actor_id], (cmd, f"successfully receive {cmd}"))
+        logging.debug(f"receive {cmd}, episodes length is {len(self.episodes)}")
 
         if len(self.episodes) >= self.max_episodes_length:
             cmd, msg = connection.send_recv(self.memory_server_conn, (cmd, self.episodes))
             logging.debug(f"send cmd:{cmd}, response msg:{msg}")
             self.episodes.clear()
 
-        send(self.queue_gather2actors[actor_id], (cmd, "successfully receive episodes"))
-        logging.debug(f"successfully cache {cmd}, length is {len(self.episodes)}")
+
+class GatherSampler(GatherBase):
+    def _run(self):
+        self._request_model_and_reset("model", "latest")
+
+        cmd2func = {
+            "model": self._run_model,
+            "episodes": self._run_episodes,
+            "sample_infos": self._run_infos
+        }
+        while True:
+            actor_id, (cmd, data) = self.queue_actor2gather.get()
+            cmd2func[cmd](actor_id, cmd, data)
+
+    def _run_self_play(self):
+        self._request_model_and_reset("model", "latest")
+        self._request_opponent_model_and_reset("model", "sample_opponent")
+
+        cmd2func = {
+            "model": self._run_model,
+            "episodes": self._run_episodes,
+            "sample_infos": self._run_infos
+        }
+        while True:
+            actor_id, (cmd, data) = self.queue_actor2gather.get()
+            cmd2func[cmd](actor_id, cmd, data)
 
 
 class GatherEvaluator(GatherBase):
-    def __init__(self, gather_id: int, num_actors: int,
-                 model_conn: connection.PickledConnection,
-                 league_conn: connection.PickledConnection,
-                 func: ActorCreateBase,
-                 use_bz2=True,
-                 self_play=False,
-                 ):
-        super().__init__(gather_id, num_actors, model_conn, league_conn, func, use_bz2, self_play)
-        self.actor_role = "evaluator"
-        self._create_actors(self.actor_role)
-
     def _run(self):
-        self._request_model_and_set("model", "latest")
+        self._request_model_and_reset("model", "latest")
 
         cmd2func = {
             "model": self._run_model,
@@ -642,8 +616,8 @@ class GatherEvaluator(GatherBase):
             cmd2func[cmd](actor_id, cmd, data)
 
     def _run_self_play(self):
-        self._request_model_and_set("model", "latest")
-        self._request_opponent_model_and_set("model", "eval_opponent")
+        self._request_model_and_reset("model", "latest")
+        self._request_opponent_model_and_reset("model", "eval_opponent")
 
         cmd2func = {
             "model": self._run_model,
@@ -654,85 +628,113 @@ class GatherEvaluator(GatherBase):
             cmd2func[cmd](actor_id, cmd, data)
 
 
+#%%
 AddrType = Tuple[str, int]
+RoleType = Literal["sampler", "evaluator"]
 
 
 @wrap_traceback
 def _open_per_gather(gather_id: int,
+                     role: RoleType,
+                     num_actors: int,
+                     league_address: AddrType,
                      memory_server_address: Optional[AddrType],
                      model_server_address: Optional[AddrType],
-                     league_address: Tuple[str, int],
-                     num_actors: int, actor_role: str,
-                     func: ActorCreateBase,
+                     actor_main: ActorMainBase,
                      use_bz2: bool,
                      self_play: bool,
                      logger_file_path: str):
     set_process_logger(file_path=logger_file_path)
-
-    assert (actor_role in ["sampler", "evaluator"])
-    if actor_role == "sampler" and memory_server_address is None:
+    # do some checks
+    assert role in ["sampler", "evaluator"]
+    if role == "sampler" and memory_server_address is None:
         raise ValueError("sampler actor must designate memory_server_address that used to receive episodes")
-    if actor_role == "sampler" and model_server_address is None:
+    if role == "sampler" and model_server_address is None:
         raise ValueError("sampler actor must designate model_server_address that used to request model")
 
-    if memory_server_address is not None:
+    if role == "sampler":
+        league_conn = connection.connect_socket_connection(*league_address)
         memory_server_conn = connection.connect_socket_connection(*memory_server_address)
-    else:
-        memory_server_conn = None
-    if model_server_address is not None:
-        model_conn = connection.connect_socket_connection(*model_server_address)
-    else:
-        model_conn = None
-    league_conn = connection.connect_socket_connection(*league_address)
-
-    logging.info(f"successfully connected! the gather {gather_id} is starting!")
-    if actor_role == "sampler":
-        gather = GatherSampler(gather_id=gather_id, num_actors=num_actors,
-                               model_conn=model_conn, league_conn=league_conn, memory_server_conn=memory_server_conn,
-                               func=func, use_bz2=use_bz2, self_play=self_play)
+        model_server_conn = connection.connect_socket_connection(*model_server_address)
+        logging.info(f"successfully connected! the gather {gather_id} is starting!")
+        gather = GatherSampler(gather_id=gather_id,
+                               role = role,
+                               num_actors=num_actors,
+                               league_conn=league_conn,
+                               memory_server_conn=memory_server_conn,
+                               model_server_conn=model_server_conn,
+                               actor_main=actor_main,
+                               use_bz2=use_bz2,
+                               self_play=self_play)
         logging.info(f"gather {gather_id} is started!")
         gather.run()
 
-    elif actor_role == "evaluator":
-        gather = GatherEvaluator(gather_id=gather_id, num_actors=num_actors,
-                                 model_conn=league_conn, league_conn=league_conn,
-                                 func=func, use_bz2=use_bz2, self_play=self_play)
+    elif role == "evaluator":
+        """
+        league and model_server_conn is the same connection
+        """
+        league_conn = connection.connect_socket_connection(*league_address)
+        gather = GatherEvaluator(gather_id=gather_id,
+                                 role="evaluator",
+                                 num_actors=num_actors,
+                                 league_conn=league_conn,
+                                 memory_server_conn=None,
+                                 model_server_conn=league_conn,
+                                 actor_main=actor_main,
+                                 use_bz2=use_bz2,
+                                 self_play=self_play)
         logging.info(f"gather {gather_id} is started!")
         gather.run()
 
 
+#%%
 def open_gather(num_gathers: int,
+                roles: Union[RoleType, List[RoleType], Tuple[RoleType]],
+                num_actors: Union[int, List[int], Tuple[int]],
                 league_address: Union[AddrType, List[AddrType], Tuple[AddrType]],
                 memory_server_address: Union[Optional[AddrType], List[Optional[AddrType]], Tuple[Optional[AddrType]]],
                 model_server_address: Union[Optional[AddrType], List[Optional[AddrType]], Tuple[Optional[AddrType]]],
-                num_actors: Union[int, List[int], Tuple[int]],
-                actor_roles: Union[str, List[str], Tuple[str]],
-                func: ActorCreateBase,
+                actor_main: ActorMainBase,
                 use_bz2: bool = True,
                 self_play: bool = False,
                 logger_file_dir=None):
-
-    if memory_server_address is None:
-        memory_server_address = [None] * num_gathers
-
-    if isinstance(memory_server_address[0], str):
-        memory_server_address = [memory_server_address] * num_gathers
-
-    if model_server_address is None:
-        model_server_address = [None] * num_gathers
-
-    if isinstance(model_server_address[0], str):
-        model_server_address = [model_server_address] * num_gathers
-
-    if isinstance(league_address[0], str):
-        league_address = [league_address] * num_gathers
+    """
+    :param num_gathers: 开启num_gathers个gather进程
+    :param roles: 每个gather的角色， 可以传入tuple或者list为每个gather指定不同的角色
+    :param num_actors:  每个进程维护num_actors个actor
+    :param league_address: 维护eval model或者league models，以及记录metrics
+    :param memory_server_address: 维护memory_server地址
+    :param model_server_address: 维护model_server地址，即当前learner的最新模型
+    :param actor_main: 主函数，创建actor
+    :param use_bz2: 是否压缩episodes和model weights
+    :param self_play: 是否self-play, 即request opponent
+    :param logger_file_dir: gather的logger_file_dir
+    """
+    if isinstance(roles, str):
+        roles = [roles] * num_gathers
+    assert len(roles) == num_gathers
 
     if isinstance(num_actors, int):
         num_actors = [num_actors] * num_gathers
+    assert len(num_actors) == num_gathers
 
-    if isinstance(actor_roles, str):
-        actor_roles = [actor_roles] * num_gathers
+    if isinstance(league_address[0], str):
+        league_address = [league_address] * num_gathers
+    assert len(league_address) == num_gathers
 
+    if memory_server_address is None:
+        memory_server_address = [None] * num_gathers
+    if isinstance(memory_server_address[0], str):
+        memory_server_address = [memory_server_address] * num_gathers
+    assert len(memory_server_address) == num_gathers
+
+    if model_server_address is None:
+        model_server_address = [None] * num_gathers
+    if isinstance(model_server_address[0], str):
+        model_server_address = [model_server_address] * num_gathers
+    assert len(model_server_address) == num_gathers
+
+    # start gather process
     mp.set_start_method("spawn")
     processes = []
 
@@ -743,9 +745,9 @@ def open_gather(num_gathers: int,
             logger_file_path = None
         p = mp.Process(name=f"gather_{i}",
                        target=_open_per_gather,
-                       args=(i, memory_server_address[i], model_server_address[i], league_address[i],
-                             num_actors[i], actor_roles[i],
-                             func, use_bz2, self_play, logger_file_path), daemon=False)
+                       args=(i, roles[i], num_actors[i],
+                             league_address[i], memory_server_address[i], model_server_address[i],
+                             actor_main, use_bz2, self_play, logger_file_path), daemon=False)
         processes.append(p)
 
     for p in processes:

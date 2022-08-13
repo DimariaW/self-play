@@ -37,22 +37,23 @@ class LearnerMain(core.LearnerMainBase):
 
         impala = alg.IMPALA(model, queue_senders, tensor_receiver,
                             lr=2e-4, gamma=0.99, lbd=0.98, vf=0.5, ef=1e-4,
-                            tensorboard_dir=os.path.join(self.logger_file_dir, "train_info"),
+                            tensorboard_dir=os.path.join(self.logger_file_dir, "metrics"),
                             vtrace_key=["reward"])
         impala.run()
 
 
-class ModelServerMain(core.ModelMainBase):
+class ModelServerMain(core.ModelServerMainBase):
     def main(self, queue_receiver: mp.Queue):
         queue_receiver = self.create_receiver(queue_receiver)
         model_server = lg.ModelServer(queue_receiver, self.port, use_bz2=USE_BZ2, cache_weights_intervals=1)
         model_server.run()
 
 
-class LeagueMain(core.ModelMainBase):
+class LeagueMain(core.ModelServerMainBase):
     def main(self, queue_receiver: mp.Queue):
         queue_receiver = self.create_receiver(queue_receiver)
-        league = lg.ModelServer4RecordAndEval(queue_receiver, self.port, use_bz2=USE_BZ2, cache_weights_intervals=3000,
+        league = lg.ModelServer4RecordAndEval(queue_receiver, self.port, use_bz2=USE_BZ2,
+                                              cache_weights_intervals=1000,
                                               save_weights_dir=os.path.join(self.logger_file_dir, "models"),
                                               tensorboard_dir=os.path.join(self.logger_file_dir, "metrics"))
         league.run()

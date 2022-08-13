@@ -10,7 +10,7 @@ import rl.core as core
 import torch
 
 
-class ActorCreate(core.ActorCreateBase):
+class ActorMain(core.ActorMainBase):
     def create_env_and_agent(self, gather_id: int = None, actor_id: int = None):
         env = gfootball_env.create_environment(env_name="11_vs_11_easy_stochastic",
                                                rewards="scoring,checkpoints",
@@ -26,7 +26,7 @@ class ActorCreate(core.ActorCreateBase):
 """
 if __name__ == "__main__":
     from rl.actor import Actor
-    env, agent = ActorCreate().create_env_and_agent()
+    env, agent = ActorMain().create_env_and_agent()
     actor = Actor(env, agent, 32, get_full_episode=False)
     episodes = []
     episodes_compressed = []

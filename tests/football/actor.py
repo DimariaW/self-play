@@ -8,7 +8,7 @@ import rl.core as core
 import torch
 
 
-class ActorCreate(core.ActorCreateBase):
+class ActorMain(core.ActorMainBase):
     def create_env_and_agent(self, gather_id: int = None, actor_id: int = None):
 
         env = gfootball_env.create_environment(env_name="1_vs_1_hard",
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     from rl.actor import Actor
     utils.set_process_logger()
 
-    env_, agent_ = ActorCreate().create_env_and_agent()
+    env_, agent_ = ActorMain().create_env_and_agent()
 
     # actor_eval = Actor(env_, agent_, num_episodes=1)
     actor_sample = Actor(env_, agent_, num_steps=32)
