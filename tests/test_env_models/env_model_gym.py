@@ -63,35 +63,36 @@ class ModelLSTM(model.ModelValueLogit):
         super().__init__()
         self.fc1 = nn.Linear(state_dim, 128)
         self.relu1 = nn.ReLU()
-        self.lstm = nn.RNNCell(input_size=128,
-                               hidden_size=128,
-                               nonlinearity="relu")
+        self.rnn = nn.GRUCell(input_size=128,
+                              hidden_size=128)
         self.fc2 = nn.Linear(128, num_act)
         self.hidden = None, None
         self.state_dim = state_dim
+        orthogonal_init(self.fc1)
+        orthogonal_init(self.fc2)
 
     def forward(self, obs: Dict) -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
         observation = obs["observation"]  # shape(B, T, state_dim)
-        h = obs["hidden"]    # shape(B, T, 128)
-
         shape = observation.shape
-        if len(observation.shape) == 3:
-            observation = observation.view(-1, self.state_dim)
-            h = h.view(-1, 128)
+        if len(observation.shape) == 3:  # train model
+            h = obs["hidden"][:, 0, :]  # shape(B, 128)
             h1 = self.relu1(self.fc1(observation))
-            h = self.lstm(h1, h)
-            output = self.fc2(h)
-            output = output.view(*shape[:-1], -1)
+            h2 = []
+            for i in range(shape[1]):
+                h = self.rnn(h1[:, i, :], h)
+                h2.append(h)
+            output = self.fc2(torch.stack(h2, dim=1))
             return {"reward": output[..., 0]}, output[..., 1:]
 
         h1 = self.relu1(self.fc1(observation))
-        h = self.lstm(h1, h)
+        h = obs["hidden"]
+        h = self.rnn(h1, h)
         self.hidden = h
         output = self.fc2(h)
         return {"reward": output[..., 0]}, output[..., 1:]
 
-    def init_hidden(self, batch_size: int, device):
-        return torch.zeros(batch_size, 128, device=device)
+    def init_hidden(self, batch_size: int):
+        return torch.zeros(batch_size, 128)
 
     def get_hidden(self):
         return self.hidden

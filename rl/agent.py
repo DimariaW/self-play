@@ -100,7 +100,7 @@ class IMPALAAgent(A2CAgent):
             return utils.to_numpy(hidden)
 
     def init_hidden(self, batch_size: int):
-        hidden = self.model.init_hidden(batch_size, torch.device("cpu"))
+        hidden = self.model.init_hidden(batch_size)
         if hidden is not None:
             return utils.to_numpy(hidden)
 

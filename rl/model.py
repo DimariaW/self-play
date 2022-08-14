@@ -45,7 +45,7 @@ class ModelValueLogit(Model):
         """
         raise NotImplementedError
 
-    def init_hidden(self, batch_size: int, device):
+    def init_hidden(self, batch_size: int):
         pass
 
     def get_hidden(self):
