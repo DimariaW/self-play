@@ -1,6 +1,8 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import rl.agent as agent
 import rl
 
 torch.set_num_threads(1)
@@ -91,16 +93,33 @@ class CNNModel(rl.ModelValueLogit):
             in_features=256,
             out_features=act_dim + 1)
 
-    def forward(self, obs):
+    def forward(self, observation):
+        obs = observation["smm"]
+        mask = observation["mask"]
         shape = obs.shape  # shape(..., C, H, W)
         obs = obs.view(-1, *shape[-3:])
         out = self.impala_cnn(obs)
         out = out.view(*shape[:-3], -1)
         value_and_logit = self.policy_value_fc(out)
-        return {"checkpoints": value_and_logit[..., 0], "scoring": None}, value_and_logit[..., 1:]
+        return {"checkpoints": value_and_logit[..., 0]}, value_and_logit[..., 1:] - 1e12 * mask
 
 
+class BuiltinAI(agent.Agent):
+    def predict(self, obs):
+        return {"action": np.array([19] * len(obs))}
 
+    def sample(self, *args, **kwargs):
+        pass
+
+    def set_weights(self, weights=None, model_index=None):
+        pass
+
+    def get_weights(self):
+        pass
+
+    @property
+    def model_id(self):
+        return "builtin_ai", None
 
 
 

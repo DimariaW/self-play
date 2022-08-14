@@ -1,7 +1,7 @@
 import random
 
 import gfootball.env as gfootball_env
-from tests.football.football_env import CHWWrapper, OpponentWrapper, BuiltinAI
+from tests.football.football_env import EnvWrapper
 from tests.football.football_model import CNNModel
 from rl.agent import IMPALAAgent
 import rl.core as core
@@ -11,29 +11,19 @@ import torch
 class ActorMain(core.ActorMainBase):
     def create_env_and_agent(self, gather_id: int = None, actor_id: int = None):
 
-        env = gfootball_env.create_environment(env_name="1_vs_1_hard",
-                                               stacked=True,
-                                               rewards="scoring,checkpoints",
+        env = gfootball_env.create_environment(env_name="11_vs_11_kaggle",
                                                render=False,
-                                               representation="extracted",
-                                               number_of_left_players_agent_controls=1,
-                                               number_of_right_players_agent_controls=1,
-                                               other_config_options={"action_set": "v2"})
-        env = CHWWrapper(env)
-
-        opponents_pool = {}
-
+                                               representation="raw",
+                                               rewards="scoring,checkpoints")
+        env = EnvWrapper(env)
         device = torch.device("cpu")
-        model = CNNModel((16, 72, 96), 19, name="cnn").to(device)
-
-        opponents_pool["cnn"] = IMPALAAgent(model, device=device)
-        opponents_pool["builtin_ai"] = BuiltinAI()
-
-        env = OpponentWrapper(env, opponents_pool)
-
         model = CNNModel((16, 72, 96), 19, name="cnn").to(device)
         agent = IMPALAAgent(model, device=device)
         return env, agent
+        # opponents_pool = {}
+        # opponents_pool["cnn"] = IMPALAAgent(model, device=device)
+        # opponents_pool["builtin_ai"] = BuiltinAI()
+        #env = OpponentWrapper(env, opponents_pool)
 
 
 if __name__ == "__main__":
