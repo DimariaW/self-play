@@ -3,7 +3,7 @@ import enum
 import gym
 import numpy as np
 import collections
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Any
 from gfootball.env.observation_preprocessing import generate_smm
 
 import rl.agent as agent
@@ -164,7 +164,7 @@ class EnvWrapper(gym.Wrapper):
             obs, reward, done, info = self.env.step([0])
         return utils.get_element_from_batch(obs, 0)
 
-    def step(self, action):
+    def step(self, action) -> Tuple[Any, Dict, bool, bool, Dict]:
         obs, reward, done, info = self.env.step([action])
         reward_infos = {"checkpoints": reward, "scoring": info["score_reward"]}
         truncated = False

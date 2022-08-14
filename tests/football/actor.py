@@ -11,7 +11,7 @@ import torch
 class ActorMain(core.ActorMainBase):
     def create_env_and_agent(self, gather_id: int = None, actor_id: int = None):
 
-        env = gfootball_env.create_environment(env_name="11_vs_11_kaggle",
+        env = gfootball_env.create_environment(env_name="11_vs_11_kaggle_easy",
                                                render=False,
                                                representation="raw",
                                                rewards="scoring,checkpoints")
