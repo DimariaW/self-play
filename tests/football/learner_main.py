@@ -7,6 +7,7 @@ if __name__ == '__main__':
 
     model_server_main = ModelServerMain(port=cfg.MODEL_ADDRESS[1], name="model_server",
                                         logger_file_dir=f"./log/{cfg.NAME}/")
+
     league_main = LeagueMain(port=cfg.LEAGUE_ADDRESS[1], name="league",
                              logger_file_dir=f"./log/{cfg.NAME}/")
 

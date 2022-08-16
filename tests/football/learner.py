@@ -1,5 +1,4 @@
-import pickle
-import bz2
+
 import torch
 import multiprocessing as mp
 import os
@@ -16,7 +15,7 @@ from tests.football.config import USE_BZ2
 
 class MemoryMain(core.MemoryMainBase):
     def main(self, queue_sender: mp.Queue):
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
         logging.info(f"the data will be in {device}")
 
         traj_queue = mem.TrajQueueMP(maxlen=16,
@@ -35,7 +34,7 @@ class MemoryMain(core.MemoryMainBase):
 
 class LearnerMain(core.LearnerMainBase):
     def main(self, queue_receiver: mp.Queue, queue_senders):
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
         logging.info(f"the data will be in {device}")
 
         tensor_receiver = self.create_receiver(queue_receiver, to_tensor=False)

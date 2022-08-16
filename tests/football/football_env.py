@@ -10,6 +10,46 @@ import rl.agent as agent
 import rl.utils as utils
 
 
+class Action(enum.IntEnum):
+    Idle = 0
+    Left = 1
+    TopLeft = 2
+    Top = 3
+    TopRight = 4
+    Right = 5
+    BottomRight = 6
+    Bottom = 7
+    BottomLeft = 8
+    LongPass = 9
+    HighPass = 10
+    ShortPass = 11
+    Shot = 12
+    Sprint = 13
+    ReleaseDirection = 14
+    ReleaseSprint = 15
+    Slide = 16
+    Dribble = 17
+    ReleaseDribble = 18
+
+
+sticky_index_to_action = [
+    Action.Left,
+    Action.TopLeft,
+    Action.Top,
+    Action.TopRight,
+    Action.Right,
+    Action.BottomRight,
+    Action.Bottom,
+    Action.BottomLeft,
+    Action.Sprint,
+    Action.Dribble
+]
+
+action_to_sticky_index = {
+    a: index for index, a in enumerate(sticky_index_to_action)
+}
+
+
 class OpponentWrapper(gym.Wrapper):
     def __init__(self, env, opponents_pool: Dict[str, agent.Agent]):
         super().__init__(env)
@@ -56,46 +96,6 @@ class OpponentWrapper(gym.Wrapper):
         return obs[0, ...], reward_infos, done, info
 
 
-#%%
-class Action(enum.IntEnum):
-    Idle = 0
-    Left = 1
-    TopLeft = 2
-    Top = 3
-    TopRight = 4
-    Right = 5
-    BottomRight = 6
-    Bottom = 7
-    BottomLeft = 8
-    LongPass = 9
-    HighPass = 10
-    ShortPass = 11
-    Shot = 12
-    Sprint = 13
-    ReleaseDirection = 14
-    ReleaseSprint = 15
-    Slide = 16
-    Dribble = 17
-    ReleaseDribble = 18
-
-sticky_index_to_action = [
-    Action.Left,
-    Action.TopLeft,
-    Action.Top,
-    Action.TopRight,
-    Action.Right,
-    Action.BottomRight,
-    Action.Bottom,
-    Action.BottomLeft,
-    Action.Sprint,
-    Action.Dribble
-]
-
-action_to_sticky_index = {
-    a: index for index, a in enumerate(sticky_index_to_action)
-}
-
-
 class SMMActionMaskWrapper(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)
@@ -138,10 +138,10 @@ class SMMActionMaskWrapper(gym.Wrapper):
         raw_observations = self.env.reset()
         smm_obs = generate_smm(raw_observations)
         illegal_action_mask = self.illegal_actions(raw_observations)
-        self.smm_obs.extend([smm_obs]*4)
+        self.smm_obs.extend([smm_obs] * 4)
         smm_obs = np.concatenate(self.smm_obs, axis=-1)
         smm_obs = np.transpose(smm_obs, axes=(0, 3, 1, 2))
-        return {"smm": smm_obs,  "mask": illegal_action_mask}
+        return {"smm": smm_obs, "mask": illegal_action_mask}
 
     def step(self, actions):
         raw_observations, reward, done, info = self.env.step(actions)
@@ -178,6 +178,7 @@ if __name__ == "__main__":
     import gfootball.env as gfootball_env
     from tests.football.football_model import CNNModel
     from rl.agent import IMPALAAgent
+
     utils.set_process_logger()
     env_ = gfootball_env.create_environment(env_name="11_vs_11_kaggle",
                                             render=False,
@@ -192,4 +193,3 @@ if __name__ == "__main__":
         obs_, reward_infos_, done_, truncated_, info_ = env_.step(action)
         if done_ or truncated_:
             env_.reset()
-

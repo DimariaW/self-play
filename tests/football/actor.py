@@ -23,7 +23,7 @@ class ActorMain(core.ActorMainBase):
         # opponents_pool = {}
         # opponents_pool["cnn"] = IMPALAAgent(model, device=device)
         # opponents_pool["builtin_ai"] = BuiltinAI()
-        #env = OpponentWrapper(env, opponents_pool)
+        # env = OpponentWrapper(env, opponents_pool)
 
 
 if __name__ == "__main__":
