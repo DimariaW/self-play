@@ -97,9 +97,10 @@ class OpponentWrapper(gym.Wrapper):
 
 
 class SMMActionMaskWrapper(gym.Wrapper):
-    def __init__(self, env):
+    def __init__(self, env, get_match_state):
         super().__init__(env)
         self.smm_obs = collections.deque(maxlen=4)
+        self.get_match_state_flag = get_match_state
 
     @staticmethod
     def illegal_actions(observations):
@@ -141,6 +142,9 @@ class SMMActionMaskWrapper(gym.Wrapper):
         self.smm_obs.extend([smm_obs] * 4)
         smm_obs = np.concatenate(self.smm_obs, axis=-1)
         smm_obs = np.transpose(smm_obs, axes=(0, 3, 1, 2))
+        if self.get_match_state_flag:
+            match_state = self.get_match_state(raw_observations)
+            smm_obs = np.concatenate([smm_obs, match_state], axis=1)
         return {"smm": smm_obs, "mask": illegal_action_mask}
 
     def step(self, actions):
@@ -150,13 +154,45 @@ class SMMActionMaskWrapper(gym.Wrapper):
         self.smm_obs.append(smm_obs)
         smm_obs = np.concatenate(self.smm_obs, axis=-1)
         smm_obs = np.transpose(smm_obs, axes=(0, 3, 1, 2))
+        if self.get_match_state_flag:
+            match_state = self.get_match_state(raw_observations)
+            smm_obs = np.concatenate([smm_obs, match_state], axis=1)
         return {"smm": smm_obs, "mask": illegal_action_mask}, reward, done, info
+
+    @staticmethod
+    def get_match_state(obs):
+        match_state = np.zeros((len(obs), 5, 72, 96))
+        for index, observation in enumerate(obs):
+            steps_left = observation["steps_left"]
+            match_state[index, 0, :, :] = steps_left / 3001 * 255
+            score = observation["score"][0]
+            score_diff = observation["score"][0] - observation["score"][1]
+            match_state[index, 1, :, :] = score / 10 * 255
+            match_state[index, 2, :, :] = (score_diff + 10) / 20 * 255
+
+            for ind, pos in enumerate(observation["left_team"]):
+                x, y = SMMActionMaskWrapper.get_points(pos)
+                match_state[index, 3, y, x] = observation["left_team_tired_factor"][ind] * 255
+
+            for ind, pos in enumerate(observation["right_team"]):
+                x, y = SMMActionMaskWrapper.get_points(pos)
+                match_state[index, 4, y, x] = observation["right_team_tired_factor"][ind] * 255
+        return match_state
+
+    @staticmethod
+    def get_points(point):
+        x = int((point[0] + 1) / 2 * 96)
+        y = int((point[1] + 1/2.25) / (2/2.25) * 72)
+        x = max(0, min(96 - 1, x))
+        y = max(0, min(72 - 1, y))
+        return x, y
 
 
 class EnvWrapper(gym.Wrapper):
-    def __init__(self, env):
-        env = SMMActionMaskWrapper(env)
+    def __init__(self, env, get_match_state_flag=False):
+        env = SMMActionMaskWrapper(env, get_match_state_flag)
         super(EnvWrapper, self).__init__(env)
+        self.get_match_state_flag = get_match_state_flag
 
     def reset(self):
         obs = self.env.reset()
@@ -168,7 +204,7 @@ class EnvWrapper(gym.Wrapper):
         obs, reward, done, info = self.env.step([action])
         reward_infos = {"checkpoints": reward, "scoring": info["score_reward"]}
         truncated = False
-        if done:
+        if done and not self.get_match_state_flag:
             truncated = True
             done = False
         return utils.get_element_from_batch(obs, 0), reward_infos, done, truncated, info
@@ -178,17 +214,20 @@ if __name__ == "__main__":
     import gfootball.env as gfootball_env
     from tests.football.football_model import CNNModel
     from rl.agent import IMPALAAgent
-
+    import tqdm
     utils.set_process_logger()
     env_ = gfootball_env.create_environment(env_name="11_vs_11_kaggle",
                                             render=False,
                                             representation="raw",
                                             rewards="scoring,checkpoints")
-    env_ = EnvWrapper(env_)
-    model = CNNModel()
+    env_ = EnvWrapper(env_, get_match_state_flag=True)
+    model = CNNModel((21, 72, 96))
     agent = IMPALAAgent(model)
     obs_ = env_.reset()
+
+    timeit = tqdm.tqdm()
     while True:
+        timeit.update()
         action = agent.sample(utils.to_numpy(obs_, unsqueeze=0))["action"][0]
         obs_, reward_infos_, done_, truncated_, info_ = env_.step(action)
         if done_ or truncated_:
