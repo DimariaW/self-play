@@ -18,7 +18,7 @@ class MemoryMain(core.MemoryMainBase):
         device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
         logging.info(f"the data will be in {device}")
 
-        traj_queue = mem.TrajQueueMP(maxlen=16,
+        traj_queue = mem.TrajQueueMP(maxlen=32,
                                      queue_sender=queue_sender,
                                      batch_size=32,
                                      use_bz2=USE_BZ2,
