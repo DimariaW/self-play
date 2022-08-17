@@ -52,7 +52,7 @@ class ConvSequence(rl.Model):
 
 
 class ImpalaCNN(rl.Model):
-    def __init__(self, in_depth, depths=(32, 64, 64, 64)):
+    def __init__(self, in_depth, depths=(16, 32, 32, 32)):
         super(ImpalaCNN, self).__init__()
 
         layers = []
@@ -63,12 +63,12 @@ class ImpalaCNN(rl.Model):
         self.residual_layers = nn.ModuleList(layers)
 
         # in_features size should be derived
-        self.fc = nn.Linear(in_features=960*2, out_features=256)
+        self.fc = nn.Linear(in_features=960, out_features=256)
 
         self.flatten = nn.Flatten()
 
     def forward(self, x):
-        out = (x - 127.5) / 255.0
+        out = x / 255.0
 
         for layer in self.residual_layers:
             out = layer(out)

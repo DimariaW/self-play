@@ -15,9 +15,9 @@ class ActorMain(core.ActorMainBase):
                                                render=False,
                                                representation="raw",
                                                rewards="scoring,checkpoints")
-        env = EnvWrapper(env, get_match_state_flag=True)
+        env = EnvWrapper(env, get_match_state_flag=False)
         device = torch.device("cpu")
-        model = CNNModel((21, 72, 96), 19, name="cnn").to(device)
+        model = CNNModel((16, 72, 96), 19, name="cnn").to(device)
         agent = IMPALAAgent(model, device=device)
         return env, agent
         # opponents_pool = {}
@@ -27,7 +27,6 @@ class ActorMain(core.ActorMainBase):
 
 
 if __name__ == "__main__":
-    import numpy as np
     import rl.utils as utils
     import logging
     from rl.actor import Actor

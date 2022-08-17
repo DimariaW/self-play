@@ -125,7 +125,7 @@ class ModelServer4RecordAndEval(ModelServer):
         super()._update_cached_weights()
         if hasattr(self, "save_weights_dir"):
             if self.use_bz2:
-                weights = bz2.decompress(self.cached_weights)
+                weights = pickle.loads(bz2.decompress(self.cached_weights))
             else:
                 weights = self.cached_weights
 
