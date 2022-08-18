@@ -619,7 +619,7 @@ class GatherEvaluator(GatherBase):
 
 #%%
 AddrType = Tuple[str, int]
-RoleType = Literal["sampler", "evaluator"]
+RoleType = Union[Literal["sampler", "evaluator"], str]
 
 
 @wrap_traceback

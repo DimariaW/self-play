@@ -18,6 +18,14 @@ CONFIG = [
      "obs_dim": 8,
      "action_head": 2,
      "num_bins": 10
+    },
+    {
+     "env_name": "BipedalWalker-v3",
+     "continuous": True,
+     "reward_threshold": 300,
+     "obs_dim": 24,
+     "action_head": 4,
+     "num_bins": 10
     }
 ][2]
 

@@ -3,7 +3,7 @@ import enum
 import gym
 import numpy as np
 import collections
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, Optional
 from gfootball.env.observation_preprocessing import generate_smm
 
 import rl.agent as agent
@@ -50,64 +50,24 @@ action_to_sticky_index = {
 }
 
 
-class OpponentWrapper(gym.Wrapper):
-    def __init__(self, env, opponents_pool: Dict[str, agent.Agent]):
-        super().__init__(env)
-
-        self.opponents_pool = opponents_pool
-        self.opponent_agent = None
-        self.opponent_obs = None
-
-        self.scoring = 0
-
-    def reset(self, model_id: Tuple[str, int], weights) -> np.ndarray:
-        model_name, model_index = model_id
-        self.opponent_agent = self.opponents_pool[model_name]
-        self.opponent_agent.set_weights(weights, model_index)
-
-        obs: np.ndarray = self.env.reset()  # shape(2, ...)
-        for _ in range(random.randint(0, 20)):
-            obs, reward, done, info = self.env.step([0, 0])
-        self.opponent_obs = obs[1:, ...]  # batch_size = 1
-
-        self.scoring = 0
-
-        return obs[0, ...]
-
-    def step(self, action: int) -> Tuple[np.ndarray, Dict[str, float], bool, Dict]:
-        opponent_action = self.opponent_agent.predict(self.opponent_obs)["action"][0]
-
-        obs, reward, done, info = self.env.step([action] + [opponent_action])
-
-        obs: np.ndarray
-        reward: np.ndarray
-        done: bool
-        info: dict
-
-        reward_infos = {"checkpoints": reward[0], "scoring": info["score_reward"]}
-
-        self.opponent_obs = obs[1:, ...]  # batchified
-        self.scoring += info["score_reward"]
-
-        if done:
-            info["win"] = int(self.scoring > 0)
-            info["opponent_id"] = self.opponent_agent.model_id
-
-        return obs[0, ...], reward_infos, done, info
-
-
 class SMMActionMaskWrapper(gym.Wrapper):
-    def __init__(self, env, get_match_state):
+    def __init__(self, env, use_match_state=False):
         super().__init__(env)
         self.smm_obs = collections.deque(maxlen=4)
-        self.get_match_state_flag = get_match_state
+        self.use_match_state = use_match_state
 
     @staticmethod
     def illegal_actions(observations):
         illegal_action_mask = np.zeros((len(observations), 19))
         for i, obs in enumerate(observations):
+            player_num = obs['active']
+            player_pos_x, player_pos_y = obs['left_team'][player_num]
+            ball_x, ball_y, ball_z = obs['ball']
+            ball_x_relative = ball_x - player_pos_x
+            ball_y_relative = ball_y - player_pos_y
+            ball_distance = np.linalg.norm([ball_x_relative, ball_y_relative])
+
             illegal_actions = list()
-            # You have a ball?
             ball_owned_team = obs['ball_owned_team']
             if ball_owned_team == 1:  # opponent owned
                 illegal_actions.append(int(Action.LongPass))
@@ -118,6 +78,14 @@ class SMMActionMaskWrapper(gym.Wrapper):
             elif ball_owned_team == -1:  # free
                 illegal_actions.append(int(Action.Dribble))
             elif ball_owned_team == 0:  # owned
+                illegal_actions.append(int(Action.Slide))
+
+            if ball_distance >= 0.03:
+                illegal_actions.append(int(Action.LongPass))
+                illegal_actions.append(int(Action.HighPass))
+                illegal_actions.append(int(Action.ShortPass))
+                illegal_actions.append(int(Action.Shot))
+                illegal_actions.append(int(Action.Dribble))
                 illegal_actions.append(int(Action.Slide))
 
             # Already sticky action?
@@ -142,7 +110,7 @@ class SMMActionMaskWrapper(gym.Wrapper):
         self.smm_obs.extend([smm_obs] * 4)
         smm_obs = np.concatenate(self.smm_obs, axis=-1)
         smm_obs = np.transpose(smm_obs, axes=(0, 3, 1, 2))
-        if self.get_match_state_flag:
+        if self.use_match_state:
             match_state = self.get_match_state(raw_observations)
             smm_obs = np.concatenate([smm_obs, match_state], axis=1)
         return {"smm": smm_obs, "mask": illegal_action_mask}
@@ -154,7 +122,7 @@ class SMMActionMaskWrapper(gym.Wrapper):
         self.smm_obs.append(smm_obs)
         smm_obs = np.concatenate(self.smm_obs, axis=-1)
         smm_obs = np.transpose(smm_obs, axes=(0, 3, 1, 2))
-        if self.get_match_state_flag:
+        if self.use_match_state:
             match_state = self.get_match_state(raw_observations)
             smm_obs = np.concatenate([smm_obs, match_state], axis=1)
         return {"smm": smm_obs, "mask": illegal_action_mask}, reward, done, info
@@ -189,10 +157,10 @@ class SMMActionMaskWrapper(gym.Wrapper):
 
 
 class EnvWrapper(gym.Wrapper):
-    def __init__(self, env, get_match_state_flag=False):
-        env = SMMActionMaskWrapper(env, get_match_state_flag)
+    def __init__(self, env, use_match_state=False):
+        env = SMMActionMaskWrapper(env, use_match_state=use_match_state)
         super(EnvWrapper, self).__init__(env)
-        self.get_match_state_flag = get_match_state_flag
+        self.use_match_state = use_match_state
 
     def reset(self):
         obs = self.env.reset()
@@ -204,10 +172,54 @@ class EnvWrapper(gym.Wrapper):
         obs, reward, done, info = self.env.step([action])
         reward_infos = {"checkpoints": reward, "scoring": info["score_reward"]}
         truncated = False
-        if done and not self.get_match_state_flag:
+        if done and not self.use_match_state:
             truncated = True
             done = False
         return utils.get_element_from_batch(obs, 0), reward_infos, done, truncated, info
+
+
+class OpponentWrapper(gym.Wrapper):
+    def __init__(self, env, opponents_pool: Dict[str, agent.Agent]):
+        super().__init__(env)
+
+        self.opponents_pool = opponents_pool
+        self.opponent_agent = None
+        self.opponent_obs = None
+
+        self.scoring = 0
+
+    def reset(self, model_id: Tuple[str, Optional[int]], weights: Optional) -> np.ndarray:
+        model_name, model_index = model_id
+        self.opponent_agent = self.opponents_pool[model_name]
+        self.opponent_agent.set_weights(weights, model_index)
+
+        obs = self.env.reset()
+        for _ in range(random.randint(0, 100)):
+            obs, reward, done, info = self.env.step([0, 0])
+        self.opponent_obs = utils.get_element_from_batch(obs, 1)
+        self.scoring = 0
+        return utils.get_element_from_batch(obs, 0)
+
+    def step(self, action: int) -> Tuple[np.ndarray, Dict[str, float], bool, Dict]:
+        opponent_action = self.opponent_agent.predict(utils.to_numpy(self.opponent_obs, unsqueeze=0))["action"][0]
+
+        obs, reward, done, info = self.env.step([action] + [opponent_action])
+
+        obs: np.ndarray
+        reward: np.ndarray
+        done: bool
+        info: dict
+
+        reward_infos = {"checkpoints": reward[0], "scoring": info["score_reward"]}
+
+        self.opponent_obs = utils.get_element_from_batch(obs, 0)
+        self.scoring += info["score_reward"]
+
+        if done:
+            info["win"] = int(self.scoring > 0)
+            info["opponent_id"] = self.opponent_agent.model_id
+
+        return utils.get_element_from_batch(obs, 0), reward_infos, done, info
 
 
 if __name__ == "__main__":
@@ -220,7 +232,7 @@ if __name__ == "__main__":
                                             render=False,
                                             representation="raw",
                                             rewards="scoring,checkpoints")
-    env_ = EnvWrapper(env_, get_match_state_flag=True)
+    env_ = EnvWrapper(env_, use_match_state=True)
     model = CNNModel((21, 72, 96))
     agent = IMPALAAgent(model)
     obs_ = env_.reset()
@@ -228,7 +240,7 @@ if __name__ == "__main__":
     timeit = tqdm.tqdm()
     while True:
         timeit.update()
-        action = agent.sample(utils.to_numpy(obs_, unsqueeze=0))["action"][0]
-        obs_, reward_infos_, done_, truncated_, info_ = env_.step(action)
+        action_ = agent.sample(utils.to_numpy(obs_, unsqueeze=0))["action"][0]
+        obs_, reward_infos_, done_, truncated_, info_ = env_.step(action_)
         if done_ or truncated_:
             env_.reset()

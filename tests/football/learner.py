@@ -40,7 +40,7 @@ class LearnerMain(core.LearnerMainBase):
         tensor_receiver = self.create_receiver(queue_receiver, to_tensor=False)
 
         model = CNNModel((16, 72, 96), 19, name="cnn").to(device)
-        model_weights = pickle.load(open("./tests/football/models/smm_cnn.pickle", "rb"))
+        model_weights = pickle.load(open("./tests/football/models/cnn_400000.pickle", "rb"))
         if type(model_weights) == bytes:
             model_weights = pickle.loads(model_weights)
         model.set_weights(model_weights)

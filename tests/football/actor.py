@@ -11,11 +11,11 @@ import torch
 class ActorMain(core.ActorMainBase):
     def create_env_and_agent(self, gather_id: int = None, actor_id: int = None):
 
-        env = gfootball_env.create_environment(env_name="11_vs_11_kaggle_easy",
+        env = gfootball_env.create_environment(env_name="11_vs_11_kaggle",
                                                render=False,
                                                representation="raw",
                                                rewards="scoring,checkpoints")
-        env = EnvWrapper(env, get_match_state_flag=False)
+        env = EnvWrapper(env, use_match_state=False)
         device = torch.device("cpu")
         model = CNNModel((16, 72, 96), 19, name="cnn").to(device)
         agent = IMPALAAgent(model, device=device)
@@ -40,7 +40,7 @@ if __name__ == "__main__":
     models_pool = [
         # (("cnn", 0), np.load("./easy_model/model_346346.npy", allow_pickle=True).item()),
         # (("cnn", 1), np.load("./hard_model/model_80031.npy", allow_pickle=True).item()),
-        # (("cnn", 2), np.load("./hard_model/model_742227.npy", allow_pickle=True).item()),
+        # (("cnn", 2), np.load("./hard_model/vs_hard_ai.npy", allow_pickle=True).item()),
         (("builtin_ai", 0), {})
     ]
 
