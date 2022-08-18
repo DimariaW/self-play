@@ -12,8 +12,8 @@ class ActorMain(core.ActorMainBase):
         env = gym.make(CONFIG["env_name"])
         env = EnvWrapper(env, reward_threshold=CONFIG["reward_threshold"])
         device = torch.device("cpu")
-        # model = Model(CONFIG["obs_dim"], CONFIG["num_act"], use_orthogonal_init=True, use_tanh=False).to(device)
-        model = ModelLSTM(CONFIG["obs_dim"], CONFIG["num_act"]).to(device)
+        model = Model(CONFIG["obs_dim"], CONFIG["num_act"], use_orthogonal_init=True, use_tanh=False).to(device)
+        # model = ModelLSTM(CONFIG["obs_dim"], CONFIG["num_act"]).to(device)
         agent = IMPALAAgent(model, device)
         return env, agent
 

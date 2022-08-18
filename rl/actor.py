@@ -209,7 +209,7 @@ class Actor:
                      f"ending info is {env_info}")
 
         meta_info = env_info
-        meta_info.update(model_id=self.agent.model_id)
+        meta_info.update(agent_id=self.agent.model_id)
         self.current_episode_info.update(meta_info=meta_info)
 
 

@@ -19,8 +19,9 @@ import rl.utils as utils
 
 
 class PickledConnection:
-    def __init__(self, conn):
+    def __init__(self, conn: socket.socket):
         self.conn = conn
+        self.conn.settimeout(10)
 
     def __del__(self):
         self.close()
@@ -70,6 +71,7 @@ class PickledConnection:
             self._send(chunk)
 
 
+@utils.wrap_traceback
 def send_recv(conn: PickledConnection, sdata: Tuple[str, Any]) -> Tuple[str, Any]:  # sdata (cmd, args or data)
     conn.send(sdata)
     rdata = conn.recv()
@@ -157,6 +159,10 @@ class QueueCommunicatorBase:
                 self.disconnect(conn)
             except BrokenPipeError:
                 self.disconnect(conn)
+            except socket.timeout:
+                conn.close()
+                self.disconnect(conn)
+                continue
 
     def _recv_thread(self):
         while True:
@@ -168,6 +174,10 @@ class QueueCommunicatorBase:
                     self.disconnect(conn)
                     continue
                 except EOFError:
+                    self.disconnect(conn)
+                    continue
+                except socket.timeout:
+                    conn.close()
                     self.disconnect(conn)
                     continue
 

@@ -50,6 +50,16 @@ def test_gae_vtrace_upgo():
           torch.sum((vtrace_value - value) * (1. - bootstrap_mask)),
           torch.sum((upgo_value - value) * (1. - bootstrap_mask)))
 
+    rho = torch.rand(640, 1280, 3)
+    c = torch.rand(640, 1280, 3)
+
+    adv, value0 = Algorithm.vtrace_multi_action_head(value, reward, done, bootstrap_mask, gamma, lbd, rho=rho, c=c)
+    adv1, value1 = Algorithm.vtrace(value, reward, done, bootstrap_mask, gamma, lbd, rho=rho[:, :, 0], c=c[:, :, 0])
+    adv2, value2 = Algorithm.vtrace(value, reward, done, bootstrap_mask, gamma, lbd, rho=rho[:, :, 1], c=c[:, :, 1])
+    adv3, value3 = Algorithm.vtrace(value, reward, done, bootstrap_mask, gamma, lbd, rho=rho[:, :, 2], c=c[:, :, 2])
+    print(torch.sum(adv[:, :, 0] - adv1), torch.sum(adv[:, :, 1] - adv2), torch.sum(adv[:, :, 2] - adv3))
+    print(torch.sum(value0[:, :, 0] - value1), torch.sum(value0[:, :, 1] - value2), torch.sum(value0[:, :, 2] - value3))
+
 
 if __name__ == "__main__":
     test_gae_vtrace_upgo()

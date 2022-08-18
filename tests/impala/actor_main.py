@@ -7,7 +7,7 @@ if __name__ == "__main__":
     actor_main = ActorMain(num_steps=32, logger_file_dir=logger_file_dir)
 
     open_gather(num_gathers=3,
-                roles=["sampler", "sampler", "evaluator"],
+                roles=["sampler", "sampler", "sampler"],
                 num_actors=2,
                 league_address=LEAGUE_ADDRESS,
                 memory_server_address=MEMORY_ADDRESS,

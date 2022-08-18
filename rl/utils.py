@@ -68,7 +68,7 @@ def wrap_traceback(func):
     @wraps(func)
     def wrapped_func(*args, **kwargs):
         try:
-            func(*args, **kwargs)
+            return func(*args, **kwargs)
         except Exception:
             logging.error(traceback.format_exc())
             raise

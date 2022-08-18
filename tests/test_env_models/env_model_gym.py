@@ -19,8 +19,8 @@ class EnvWrapper(gym.Wrapper):
     def reset(self):
         return self.env.reset()
 
-    def step(self, action: int) -> Tuple[Any, Dict[str, float], bool, bool, Dict[str, Any]]:
-        obs, reward, done, info = self.env.step(action)
+    def step(self, action) -> Tuple[Any, Dict[str, float], bool, bool, Dict[str, Any]]:
+        obs, reward, done, info = self.env.step(action[0])
         truncated = info.get('TimeLimit.truncated', False)
         if done and truncated:
             done = False
@@ -55,7 +55,7 @@ class Model(model.ModelValueLogit):
         h2 = self.act_fn(self.fc2(h1))
         output = self.fc3(h2)
 
-        return {"reward": output[..., 0]}, output[..., 1:]  # value and logit, value 的最后一维度需要squeeze
+        return {"reward": output[..., 0]}, output[..., 1:].unsqueeze(-2)  # value and logit, value 的最后一维度需要squeeze
 
 
 class ModelLSTM(model.ModelValueLogit):
@@ -82,14 +82,14 @@ class ModelLSTM(model.ModelValueLogit):
                 h = self.rnn(h1[:, i, :], h)
                 h2.append(h)
             output = self.fc2(torch.stack(h2, dim=1))
-            return {"reward": output[..., 0]}, output[..., 1:]
+            return {"reward": output[..., 0]}, output[..., 1:].unsqueeze(-2)
 
         h1 = self.relu1(self.fc1(observation))
         h = obs["hidden"]
         h = self.rnn(h1, h)
         self.hidden = h
         output = self.fc2(h)
-        return {"reward": output[..., 0]}, output[..., 1:]
+        return {"reward": output[..., 0]}, output[..., 1:].unsqueeze(-2)
 
     def init_hidden(self, batch_size: int):
         return torch.zeros(batch_size, 128)
