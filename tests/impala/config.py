@@ -27,7 +27,7 @@ CONFIG = [
      "action_head": 4,
      "num_bins": 10
     }
-][2]
+][3]
 
 USE_BZ2 = False
 

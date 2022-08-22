@@ -4,11 +4,10 @@ import gym
 import numpy as np
 import collections
 from typing import Tuple, Dict, Any, Optional
-import gfootball.env as gfootball_env
 from gfootball.env.observation_preprocessing import generate_smm
 import rl.agent as agent
 import rl.utils as utils
-from tests.football.football_model import CNNModel, BuiltinAI
+
 #%%
 
 
@@ -324,6 +323,42 @@ class FeatureEnv(gym.Wrapper):
             done = False
         return Observation2Feature.preprocess_obs(obs[0], self.action_history), reward_infos, done, truncated, info
 
+
+class FeatureEnv4MultiAgent(gym.Wrapper):
+    def __init__(self, num_left=1, num_right=1):
+        env = gfootball_env.create_environment(env_name="11_vs_11_easy_stochastic",
+                                               render=False,
+                                               representation="raw",
+                                               rewards="scoring",
+                                               number_of_left_players_agent_controls=num_left,
+                                               number_of_right_players_agent_controls=num_right)
+        super().__init__(env)
+        self.action_histories = [collections.deque(maxlen=8) for _ in range(num_left+num_right)]
+        self.num_left = num_left
+        self.num_right = num_right
+
+    def reset(self):
+        for action_history in self.action_histories:
+            action_history.extend([0] * 8)
+        obs = self.env.reset()
+        for _ in range(random.randint(0, 100)):
+            obs, reward, done, info = self.env.step([0])
+        obs = [Observation2Feature.preprocess_obs(observation, action_history)
+               for observation, action_history in zip(obs, self.action_histories)]
+        return utils.batchify(obs, unsqueeze=0)
+
+    def step(self, action) -> Tuple[Any, Dict, bool, bool, Dict]:
+        self.action_history.append(action)
+        obs, reward, done, info = self.env.step([action])
+        reward_infos = {"scoring": info["score_reward"]}
+        truncated = False
+        if done:
+            truncated = True
+            done = False
+        obs = [Observation2Feature.preprocess_obs(observation, action_history)
+               for observation, action_history in zip(obs, self.action_histories)]
+
+        return utils.batchify(obs, unsqueeze=0), reward_infos, done, truncated, info
 
 #%%
 
