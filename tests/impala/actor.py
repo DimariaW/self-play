@@ -9,7 +9,7 @@ class ActorMain(core.ActorMainBase):
         from tests.impala.config import CONFIG
         from rl.agent import IMPALAAgent
 
-        env = gym.make(CONFIG["env_name"], hardcore=True, render=True)  # continuous=CONFIG.get("continuous", False))
+        env = gym.make(CONFIG["env_name"], hardcore=True)  # continuous=CONFIG.get("continuous", False))
         if CONFIG.get("continuous", False):
             env = DiscreteActionSpace(env, num_bins=CONFIG["num_bins"])
         env = EnvWrapper(env, reward_threshold=CONFIG["reward_threshold"])

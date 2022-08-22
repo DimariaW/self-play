@@ -325,8 +325,8 @@ class FeatureEnv(gym.Wrapper):
 
 
 class FeatureEnv4MultiAgent(gym.Wrapper):
-    def __init__(self, num_left=1, num_right=1):
-        env = gfootball_env.create_environment(env_name="11_vs_11_easy_stochastic",
+    def __init__(self, num_left=3, num_right=2):
+        env = gfootball_env.create_environment(env_name="academy_3_vs_1_with_keeper",
                                                render=False,
                                                representation="raw",
                                                rewards="scoring",
@@ -341,20 +341,18 @@ class FeatureEnv4MultiAgent(gym.Wrapper):
         for action_history in self.action_histories:
             action_history.extend([0] * 8)
         obs = self.env.reset()
-        for _ in range(random.randint(0, 100)):
-            obs, reward, done, info = self.env.step([0])
+        for _ in range(random.randint(0, 10)):
+            obs, reward, done, info = self.env.step([0, 0, 0])
         obs = [Observation2Feature.preprocess_obs(observation, action_history)
                for observation, action_history in zip(obs, self.action_histories)]
         return utils.batchify(obs, unsqueeze=0)
 
     def step(self, action) -> Tuple[Any, Dict, bool, bool, Dict]:
-        self.action_history.append(action)
-        obs, reward, done, info = self.env.step([action])
+        for act, action_history in zip(action, self.action_histories):
+            action_history.append(act)
+        obs, reward, done, info = self.env.step(action)
         reward_infos = {"scoring": info["score_reward"]}
         truncated = False
-        if done:
-            truncated = True
-            done = False
         obs = [Observation2Feature.preprocess_obs(observation, action_history)
                for observation, action_history in zip(obs, self.action_histories)]
 
