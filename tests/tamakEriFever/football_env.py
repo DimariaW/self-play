@@ -1187,7 +1187,6 @@ class TamakEriFeverEnv(gym.Wrapper):
         left_minus_left_goal_x = (obs_left_team[:, 0][..., None] - left_goal[0]).repeat(self.num_right_players, axis=1)
         left_minus_left_goal_y = (obs_left_team[:, 1][..., None] - left_goal[1]).repeat(self.num_right_players, axis=1)
 
-
         # right players - right goal
         right_minus_right_goal_x = (obs_right_team[:, 0][..., None] - right_goal[0]).\
             repeat(self.num_left_players, axis=1).transpose((1, 0))
@@ -1231,19 +1230,19 @@ class TamakEriFeverEnv(gym.Wrapper):
             repeat(self.num_left_players, axis=1).transpose(1, 0)
 
         # left players direction
-        obs_left_team_direction = obs['left_team_direction']
+        obs_left_team_direction = obs['left_team_direction'] * 100  # represent speed, enlarge scale
         left_player_direction_x = np.repeat(obs_left_team_direction[:, 0][..., None], self.num_right_players, axis=1)
         left_player_direction_y = np.repeat(obs_left_team_direction[:, 1][..., None], self.num_right_players, axis=1)
 
         # right players direction
-        obs_right_team_direction = obs['right_team_direction']
+        obs_right_team_direction = obs['right_team_direction'] * 100
         right_player_direction_x = np.repeat(obs_right_team_direction[:, 0][..., None], self.num_left_players, axis=1).\
-            transpose(1, 0)
+            transpose((1, 0))
         right_player_direction_y = np.repeat(obs_right_team_direction[:, 1][..., None], self.num_left_players, axis=1).\
-            transpose(1, 0)
+            transpose((1, 0))
 
         # ball direction
-        obs_ball_direction = obs['ball_direction']
+        obs_ball_direction = obs['ball_direction'] * 20
         ball_direction_x = np.ones((self.num_left_players, self.num_right_players)) * obs_ball_direction[0]
         ball_direction_y = np.ones((self.num_left_players, self.num_right_players)) * obs_ball_direction[1]
         ball_direction_z = np.ones((self.num_left_players, self.num_right_players)) * obs_ball_direction[2]
@@ -1260,12 +1259,12 @@ class TamakEriFeverEnv(gym.Wrapper):
 
         # right players direction - ball direction
         right_minus_ball_direction_x = (obs_right_team_direction[:, 0][..., None] - obs_ball_direction[0]).repeat(
-            self.num_left_players, axis=1).transpose(1, 0)
+            self.num_left_players, axis=1).transpose((1, 0))
         right_minus_ball_direction_y = (obs_right_team_direction[:, 1][..., None] - obs_ball_direction[1]).repeat(
-            self.num_left_players, axis=1).transpose(1, 0)
+            self.num_left_players, axis=1).transpose((1, 0))
 
         # ball rotation
-        obs_ball_rotation = obs['ball_rotation']
+        obs_ball_rotation = obs['ball_rotation'] * 20
         ball_rotation_x = np.ones((self.num_left_players, self.num_right_players)) * obs_ball_rotation[0]
         ball_rotation_y = np.ones((self.num_left_players, self.num_right_players)) * obs_ball_rotation[1]
         ball_rotation_z = np.ones((self.num_left_players, self.num_right_players)) * obs_ball_rotation[2]

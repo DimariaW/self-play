@@ -8,7 +8,7 @@ import rl.algorithm as alg
 import rl.league as lg
 import logging
 
-from tests.football.football_model import CNNModel
+from tests.football.football_model import CNNModel, FeatureModel
 
 from tests.football.config import USE_BZ2
 
@@ -20,7 +20,7 @@ class MemoryMain(core.MemoryMainBase):
 
         traj_queue = mem.TrajQueueMP(maxlen=32,
                                      queue_sender=queue_sender,
-                                     batch_size=32,
+                                     batch_size=16,
                                      use_bz2=USE_BZ2,
                                      to_tensor=True,
                                      device=device,
@@ -39,13 +39,14 @@ class LearnerMain(core.LearnerMainBase):
 
         tensor_receiver = self.create_receiver(queue_receiver, to_tensor=False)
 
-        model = CNNModel((16, 72, 96), 19, name="cnn").to(device)
-        model_weights = pickle.load(open("./tests/football/models/cnn_400000.pickle", "rb"))
-        if type(model_weights) == bytes:
-            model_weights = pickle.loads(model_weights)
-        model.set_weights(model_weights)
-        logging.info("successfully loads weight from pretrained !")
+        # model = CNNModel((16, 72, 96), 19, name="cnn").to(device)
+        # model_weights = pickle.load(open("./tests/football/models/cnn_400000.pickle", "rb"))
+        # if type(model_weights) == bytes:
+        #   model_weights = pickle.loads(model_weights)
+        # model.set_weights(model_weights)
+        # logging.info("successfully loads weight from pretrained !")
 
+        model = FeatureModel().to(device)
         impala = alg.IMPALA(model,
                             queue_senders,
                             tensor_receiver,

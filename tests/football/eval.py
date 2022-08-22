@@ -10,7 +10,7 @@ env.render()
 
 actor = rl_actor.Actor(env, agent, num_episodes=10)
 
-weights = pickle.load(open("./models/cnn_400000.pickle", "rb"))
+weights = pickle.load(open("./models/cnn_1500000.pickle", "rb"))
 index = 400000
 
 actor.reset_agent(("cnn", index), weights)

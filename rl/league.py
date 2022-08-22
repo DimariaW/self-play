@@ -259,7 +259,7 @@ class League(ModelServer4RecordAndEval):
             ratio = np.random.rand()
             if ratio <= 0.5:
                 self._send_cached_weights(conn, cmd, data)
-            elif ratio <= 0.05:
+            elif ratio <= 0.55:
                 self._send_opponent(conn, cmd, data, ignore_priority=True)
             else:  # pfsp
                 self._send_opponent(conn, cmd, data)

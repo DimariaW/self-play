@@ -12,7 +12,7 @@ class FootballEncoder(nn.Module):
     def __init__(self, filters):
         super().__init__()
         self.player_embedding = nn.Embedding(32, 5)  # padding_idx=0)
-        self.mode_embedding = nn.Embedding(8, 3)   # padding_idx=0)
+        self.mode_embedding = nn.Embedding(7, 3)   # padding_idx=0)
         self.fc_teammate = nn.Linear(23, filters)
         self.fc_opponent = nn.Linear(23, filters)
         self.fc = nn.Linear(filters + 41, filters)
@@ -147,16 +147,12 @@ class CNNModel(nn.Module):
         )
         self.pool1 = nn.AdaptiveAvgPool2d((1, 11))
         self.conv2 = nn.Sequential(
-            nn.BatchNorm2d(128),
-            nn.Conv2d(128, 160, kernel_size=(1, 1), stride=1, bias=False),
+            nn.Conv2d(128, 160, kernel_size=1, stride=1, bias=False),
             nn.ReLU(inplace=True),
-            nn.BatchNorm2d(160),
-            nn.Conv2d(160, 96, kernel_size=(1, 1), stride=1, bias=False),
+            nn.Conv2d(160, 96, kernel_size=1, stride=1, bias=False),
             nn.ReLU(inplace=True),
-            nn.BatchNorm2d(96),
             nn.Conv2d(96, final_filters, kernel_size=(1, 1), stride=1, bias=False),
             nn.ReLU(inplace=True),
-            nn.BatchNorm2d(final_filters),
         )
         self.pool2 = nn.AdaptiveAvgPool2d((1, 1))
         self.flatten = nn.Flatten()
