@@ -33,6 +33,21 @@ def test_feature_env_model():
     print("---")
 
 
+def test_feature_env_4_multi_agent():
+    from tests.football.football_env import FeatureEnv4MultiAgent
+    from tests.football.football_model import FeatureModel
+    import rl.utils as utils
+    import numpy as np
+
+    env = FeatureEnv4MultiAgent()
+    model = FeatureModel()
+
+    obs = env.reset()
+    value_infos, logits = model(utils.to_tensor(utils.to_tensor(obs, unsqueeze=0), unsqueeze=0))
+    next_obs, reward_infos, done, truncated, info = env.step(np.array([0, 0, 0]))
+
+
 if __name__ == "__main__":
     test_observation2feature()
     test_feature_env_model()
+    test_feature_env_4_multi_agent()

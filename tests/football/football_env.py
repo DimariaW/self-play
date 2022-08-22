@@ -5,6 +5,7 @@ import numpy as np
 import collections
 from typing import Tuple, Dict, Any, Optional
 from gfootball.env.observation_preprocessing import generate_smm
+import gfootball.env as gfootball_env
 import rl.agent as agent
 import rl.utils as utils
 
@@ -280,12 +281,12 @@ class Observation2Feature:
         return np.transpose(team_feature, (2, 0, 1))
 
     @staticmethod
-    def preprocess_obs(obs, action_history):
+    def preprocess_obs(obs, action_history, num_left_players=11, num_right_players=11):
         illegal_action_mask = Observation2Feature.create_illegal_action_masks(obs)
         ball_zone = Observation2Feature.encode_ball_which_zone(obs)
         ball_feature, player_feature = Observation2Feature.get_ball_and_player_feature(obs, ball_zone,
-                                                                                   illegal_action_mask)
-        team_feature = Observation2Feature.get_team_feature(obs, 11, 11)
+                                                                                       illegal_action_mask)
+        team_feature = Observation2Feature.get_team_feature(obs, num_left_players, num_right_players)
         return {
             "team_feature": team_feature,
             "ball_feature": ball_feature,
@@ -325,7 +326,7 @@ class FeatureEnv(gym.Wrapper):
 
 
 class FeatureEnv4MultiAgent(gym.Wrapper):
-    def __init__(self, num_left=3, num_right=2):
+    def __init__(self, num_left=3, num_right=0):
         env = gfootball_env.create_environment(env_name="academy_3_vs_1_with_keeper",
                                                render=False,
                                                representation="raw",
@@ -342,8 +343,8 @@ class FeatureEnv4MultiAgent(gym.Wrapper):
             action_history.extend([0] * 8)
         obs = self.env.reset()
         for _ in range(random.randint(0, 10)):
-            obs, reward, done, info = self.env.step([0, 0, 0])
-        obs = [Observation2Feature.preprocess_obs(observation, action_history)
+            obs, reward, done, info = self.env.step([0] * (self.num_right + self.num_left))
+        obs = [Observation2Feature.preprocess_obs(observation, action_history, 4, 2)
                for observation, action_history in zip(obs, self.action_histories)]
         return utils.batchify(obs, unsqueeze=0)
 
@@ -353,7 +354,7 @@ class FeatureEnv4MultiAgent(gym.Wrapper):
         obs, reward, done, info = self.env.step(action)
         reward_infos = {"scoring": info["score_reward"]}
         truncated = False
-        obs = [Observation2Feature.preprocess_obs(observation, action_history)
+        obs = [Observation2Feature.preprocess_obs(observation, action_history, 4, 2)
                for observation, action_history in zip(obs, self.action_histories)]
 
         return utils.batchify(obs, unsqueeze=0), reward_infos, done, truncated, info
