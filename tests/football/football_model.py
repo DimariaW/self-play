@@ -192,7 +192,7 @@ class FeatureModel(rl.ModelValueLogit):
 
         ebd = torch.concat([player_ebd, ball_ebd, team_ebd, action_ebd], dim=-1)
         value_logits = self.head(ebd)
-        return {"reward": value_logits[..., 0]}, value_logits[..., 1:] - 1e12 * obs["illegal_action_mask"]
+        return {"checkpoints": value_logits[..., 0]}, value_logits[..., 1:] - 1e12 * obs["illegal_action_mask"]
 #%%
 
 
