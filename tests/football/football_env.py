@@ -308,9 +308,11 @@ class FeatureEnv(gym.Wrapper):
         self.action_history = collections.deque(maxlen=8)
 
     def reset(self):
-        obs = self.env.reset()[0]
         self.action_history.extend([0]*8)
-        return Observation2Feature.preprocess_obs(obs, self.action_history)
+        obs = self.env.reset()
+        for _ in range(random.randint(0, 100)):
+            obs, reward, done, info = self.env.step([0])
+        return Observation2Feature.preprocess_obs(obs[0], self.action_history)
 
     def step(self, action) -> Tuple[Any, Dict, bool, bool, Dict]:
         self.action_history.append(action)
