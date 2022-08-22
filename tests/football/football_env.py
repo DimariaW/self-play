@@ -3,7 +3,7 @@ import enum
 import gym
 import numpy as np
 import collections
-from typing import Tuple, Dict, Any, Optional
+from typing import Tuple, Dict, Any, Optional, Literal
 from gfootball.env.observation_preprocessing import generate_smm
 import gfootball.env as gfootball_env
 import rl.agent as agent
@@ -42,6 +42,10 @@ class BallZone(enum.IntEnum):
     ShotZone = 4
     OtherZone = 5
 
+
+ball_zone_to_reward = [
+    -2, -1, 0, 1, 2, 0
+]
 
 sticky_index_to_action = [
     Action.Left,
@@ -293,36 +297,66 @@ class Observation2Feature:
             "player_feature": player_feature,
             "illegal_action_mask": illegal_action_mask,
             "action_history": np.array(action_history)
-        }
+        }, ball_zone
+
+    @staticmethod
+    def reward(pre_left_yellow_card, pre_right_yellow_card, left_yellow_card, right_yellow_card, score, ball_zone):
+        left_yellow = np.sum(left_yellow_card) - np.sum(pre_left_yellow_card)
+        right_yellow = np.sum(right_yellow_card) - np.sum(pre_right_yellow_card)
+        yellow_r = right_yellow - left_yellow
+        ball_zone_reward = ball_zone_to_reward[ball_zone]
+        return 5 * score + yellow_r + 0.003 * ball_zone_reward
 
 
 class FeatureEnv(gym.Wrapper):
-    def __init__(self):
+    def __init__(self, reward_type: Literal["checkpoints", "customized"] = "checkpoints"):
         env = gfootball_env.create_environment(env_name="11_vs_11_easy_stochastic",
                                                render=False,
                                                representation="raw",
-                                               rewards="scoring,checkpoints",
+                                               rewards="scoring,checkpoints"
+                                               if reward_type == "checkpoints" else "scoring",
                                                number_of_left_players_agent_controls=1,
                                                number_of_right_players_agent_controls=0)
         super().__init__(env)
+        self.reward_type = reward_type
         self.action_history = collections.deque(maxlen=8)
+        self.pre_left_yellow_card = None
+        self.pre_right_yellow_card = None
 
     def reset(self):
-        self.action_history.extend([0]*8)
         obs = self.env.reset()
         for _ in range(random.randint(0, 100)):
             obs, reward, done, info = self.env.step([0])
-        return Observation2Feature.preprocess_obs(obs[0], self.action_history)
+
+        obs = obs[0]
+        self.action_history.extend([0] * 8)
+        self.pre_left_yellow_card = obs["left_team_yellow_card"]
+        self.pre_right_yellow_card = obs["right_team_yellow_card"]
+        return Observation2Feature.preprocess_obs(obs, self.action_history)[0]
 
     def step(self, action) -> Tuple[Any, Dict, bool, bool, Dict]:
         self.action_history.append(action)
         obs, reward, done, info = self.env.step([action])
-        reward_infos = {"checkpoints": reward, "scoring": info["score_reward"]}
+        obs = obs[0]
         truncated = False
         if done:
             truncated = True
             done = False
-        return Observation2Feature.preprocess_obs(obs[0], self.action_history), reward_infos, done, truncated, info
+        feature, ball_zone = Observation2Feature.preprocess_obs(obs, self.action_history)
+        if self.reward_type == "checkpoints":
+            reward_infos = {"checkpoints": reward, "scoring": info["score_reward"]}
+        else:
+            left_yellow_card = obs["left_team_yellow_card"]
+            right_yellow_card = obs["right_team_yellow_card"]
+            reward_infos = {"checkpoints": Observation2Feature.reward(self.pre_left_yellow_card,
+                                                                      self.pre_right_yellow_card,
+                                                                      left_yellow_card,
+                                                                      right_yellow_card,
+                                                                      reward, ball_zone),
+                            "scoring": reward}
+            self.pre_right_yellow_card = right_yellow_card
+            self.pre_left_yellow_card = left_yellow_card
+        return feature, reward_infos, done, truncated, info
 
 
 class FeatureEnv4MultiAgent(gym.Wrapper):

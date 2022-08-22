@@ -23,7 +23,7 @@ def test_feature_env_model():
     from tests.football.football_model import FeatureModel
     import rl.utils as utils
 
-    env = FeatureEnv()
+    env = FeatureEnv(reward_type="customized")
     model = FeatureModel()
 
     obs = env.reset()
