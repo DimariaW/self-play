@@ -374,7 +374,7 @@ class FeatureEnv(gym.Wrapper):
 
         obs = obs[0]
         self.action_history.extend([0] * 8)
-        feature, _ = Observation2Feature.preprocess_obs(obs, self.action_history)[0]
+        feature, _ = Observation2Feature.preprocess_obs(obs, self.action_history)
         self.pre_left_yellow_card = obs["left_team_yellow_card"]
         self.pre_right_yellow_card = obs["right_team_yellow_card"]
         if obs["ball_owned_team"] != -1:
