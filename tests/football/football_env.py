@@ -76,13 +76,16 @@ class Observation2Feature:
         ball_x_relative = ball_x - player_pos_x
         ball_y_relative = ball_y - player_pos_y
         ball_distance = np.linalg.norm([ball_x_relative, ball_y_relative])
+
+        if ball_distance > 0.03 and obs["game_mode"] == 0:
+            illegal_action_set.update([Action.ShortPass, Action.LongPass, Action.HighPass,
+                                       Action.Shot, Action.Dribble, Action.Slide])
+
         if obs['ball_owned_team'] == 1:  # opponents owning ball
             illegal_action_set.update([Action.ShortPass, Action.LongPass, Action.HighPass,
                                        Action.Shot, Action.Dribble])
-        elif obs['ball_owned_team'] == -1 and ball_distance > 0.03 and obs['game_mode'] == 0:  # Ground ball and far from me
-            illegal_action_set.update([Action.ShortPass, Action.LongPass, Action.HighPass,
-                                       Action.Shot, Action.Dribble, Action.Slide])
-        else:  # my team owning ball
+
+        elif obs['ball_owned_team'] == 0:  # my team owning ball
             illegal_action_set.update([Action.Slide])
 
         # Dealing with sticky actions
