@@ -43,6 +43,15 @@ class BallZone(enum.IntEnum):
     OtherZone = 5
 
 
+class GameMode(enum.IntEnum):
+    Normal = 0
+    KickOff = 1
+    GoalKick = 2
+    FreeKick = 3
+    Corner = 4
+    ThrowIn = 5
+    Penalty = 6
+
 ball_zone_to_reward = [
     -2, -1, 0, 1, 2, 0
 ]
@@ -66,6 +75,27 @@ action_to_sticky_index = {
 
 
 class Observation2Feature:
+    @staticmethod
+    def _preprocess_obs(obs):
+        mode = obs['game_mode']
+        if mode == GameMode.FreeKick or \
+                mode == GameMode.Corner or \
+                mode == GameMode.Penalty or \
+                mode == GameMode.GoalKick:
+            # find nearest player and team
+            def dist(xy1, xy2):
+                return ((xy1[0] - xy2[0]) ** 2 + (xy1[1] - xy2[1]) ** 2) ** 0.5
+
+            team_player_position = [(0, i, p) for i, p in enumerate(obs['left_team'])] + \
+                                   [(1, i, p) for i, p in enumerate(obs['right_team'])]
+            distances = [(t[0], t[1], dist(t[2], obs['ball'][:2])) for t in team_player_position]
+            distances = sorted(distances, key=lambda x: x[2])
+            # print(mode, [t[2] for t in distances])
+            # print(o['ball_owned_team'], o['ball_owned_player'], '->', distances[0][0], distances[0][1])
+            # input()
+            obs['ball_owned_team'] = distances[0][0]
+            obs['ball_owned_player'] = distances[0][1]
+        return obs
 
     @staticmethod
     def create_illegal_action_masks(obs):
@@ -289,6 +319,7 @@ class Observation2Feature:
 
     @staticmethod
     def preprocess_obs(obs, action_history, num_left_players=11, num_right_players=11):
+        Observation2Feature._preprocess_obs(obs)
         illegal_action_mask = Observation2Feature.create_illegal_action_masks(obs)
         ball_zone = Observation2Feature.encode_ball_which_zone(obs)
         ball_feature, player_feature = Observation2Feature.get_ball_and_player_feature(obs, ball_zone,
@@ -303,11 +334,19 @@ class Observation2Feature:
         }, ball_zone
 
     @staticmethod
-    def reward(pre_left_yellow_card, pre_right_yellow_card, left_yellow_card, right_yellow_card, score, ball_zone):
+    def reward(pre_left_yellow_card, pre_right_yellow_card, left_yellow_card, right_yellow_card,
+               score, ball_zone, pre_ball_owned_team, ball_owned_team):
+
         left_yellow = np.sum(left_yellow_card) - np.sum(pre_left_yellow_card)
         right_yellow = np.sum(right_yellow_card) - np.sum(pre_right_yellow_card)
         yellow_r = right_yellow - left_yellow
-        ball_zone_reward = ball_zone_to_reward[ball_zone]
+        if ball_owned_team == 1 and pre_ball_owned_team == 0:
+            ball_zone_reward = -2
+        elif ball_owned_team == 1:
+            ball_zone_reward = -1
+        else:
+            ball_zone_reward = ball_zone_to_reward[ball_zone]
+
         return 5 * score + yellow_r + 0.003 * ball_zone_reward
 
 
@@ -323,8 +362,10 @@ class FeatureEnv(gym.Wrapper):
         super().__init__(env)
         self.reward_type = reward_type
         self.action_history = collections.deque(maxlen=8)
+
         self.pre_left_yellow_card = None
         self.pre_right_yellow_card = None
+        self.pre_ball_owned_team = 0  # 默认自己拥有球权
 
     def reset(self):
         obs = self.env.reset()
@@ -333,32 +374,44 @@ class FeatureEnv(gym.Wrapper):
 
         obs = obs[0]
         self.action_history.extend([0] * 8)
+        feature, _ = Observation2Feature.preprocess_obs(obs, self.action_history)[0]
         self.pre_left_yellow_card = obs["left_team_yellow_card"]
         self.pre_right_yellow_card = obs["right_team_yellow_card"]
-        return Observation2Feature.preprocess_obs(obs, self.action_history)[0]
+        if obs["ball_owned_team"] != -1:
+            self.pre_ball_owned_team = obs["ball_owned_team"]
+        return feature
 
     def step(self, action) -> Tuple[Any, Dict, bool, bool, Dict]:
         self.action_history.append(action)
         obs, reward, done, info = self.env.step([action])
-        obs = obs[0]
+
         truncated = False
         if done:
             truncated = True
             done = False
+
+        obs = obs[0]
         feature, ball_zone = Observation2Feature.preprocess_obs(obs, self.action_history)
         if self.reward_type == "checkpoints":
             reward_infos = {"checkpoints": reward, "scoring": info["score_reward"]}
         else:
             left_yellow_card = obs["left_team_yellow_card"]
             right_yellow_card = obs["right_team_yellow_card"]
+            ball_owned_team = obs["ball_owned_team"]
             reward_infos = {"checkpoints": Observation2Feature.reward(self.pre_left_yellow_card,
                                                                       self.pre_right_yellow_card,
                                                                       left_yellow_card,
                                                                       right_yellow_card,
-                                                                      reward, ball_zone),
-                            "scoring": reward}
+                                                                      reward, ball_zone,
+                                                                      self.pre_ball_owned_team,
+                                                                      ball_owned_team),
+                            "scoring": info["score_reward"]}
+
             self.pre_right_yellow_card = right_yellow_card
             self.pre_left_yellow_card = left_yellow_card
+            if ball_owned_team != -1:
+                self.pre_ball_owned_team = obs["ball_owned_team"]
+
         return feature, reward_infos, done, truncated, info
 
 
