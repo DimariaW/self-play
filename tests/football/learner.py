@@ -51,7 +51,7 @@ class LearnerMain(core.LearnerMainBase):
                             queue_senders,
                             tensor_receiver,
                             # lr=0.00019896, gamma=0.993, lbd=1, vf=0.5, ef=0.00087453,
-                            lr=0.0001, gamma=0.993, lbd=0.96, vf=0.5, ef=0.003,
+                            lr=0.0001, gamma=0.993, lbd=0.96, vf=0.5, ef=0.002,
                             tensorboard_dir=os.path.join(self.logger_file_dir, "train_info"),
                             vtrace_key=["checkpoints"])
         impala.run()

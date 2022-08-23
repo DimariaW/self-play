@@ -52,6 +52,7 @@ class GameMode(enum.IntEnum):
     ThrowIn = 5
     Penalty = 6
 
+
 ball_zone_to_reward = [
     -2, -1, 0, 1, 2, 0
 ]
@@ -340,10 +341,14 @@ class Observation2Feature:
         left_yellow = np.sum(left_yellow_card) - np.sum(pre_left_yellow_card)
         right_yellow = np.sum(right_yellow_card) - np.sum(pre_right_yellow_card)
         yellow_r = right_yellow - left_yellow
-        if ball_owned_team == 1 and pre_ball_owned_team == 0:
-            ball_zone_reward = -2
-        elif ball_owned_team == 1:
-            ball_zone_reward = -1
+        if ball_owned_team == 1 and pre_ball_owned_team == 0:  # 丢失球权-0.12奖励
+            ball_zone_reward = - 40
+        elif ball_owned_team == 1:  # 一直丢失球权 -0.06奖励
+            ball_zone_reward = - 20
+        elif ball_owned_team == 0:
+            ball_zone_reward = ball_zone_to_reward[ball_zone]
+        elif ball_owned_team == -1 and pre_ball_owned_team == 1:
+            ball_zone_reward = 0
         else:
             ball_zone_reward = ball_zone_to_reward[ball_zone]
 
