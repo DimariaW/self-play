@@ -1,4 +1,4 @@
-NAME = "kaggle_easy_feature_impala"  # env_model_algorithm_other
+NAME = "kaggle_easy_feature_impala_upgo"  # env_model_algorithm_other
 USE_BZ2 = True
 
 MEMORY_ADDRESS = ("10.255.85.17", 57779)
