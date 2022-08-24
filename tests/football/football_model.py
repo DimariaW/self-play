@@ -106,6 +106,29 @@ class CNNModel(rl.ModelValueLogit):
 #%%
 
 
+class GameEncoder(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.mode_embedding = nn.Embedding(7, 32)
+        self.game_embedding = nn.Sequential(
+            nn.Linear(17, 32),
+            nn.ReLU(inplace=True),
+            nn.Linear(32, 32),
+            nn.ReLU(inplace=True)
+        )
+        self.final_embedding = nn.Sequential(
+            nn.Linear(64, 128),
+            nn.ReLU(inplace=True),
+            nn.Linear(128, 128),
+            nn.LayerNorm(128)
+        )
+
+    def forward(self, game_feature):
+        mode_ebd = self.mode_embedding(game_feature["mode_index"])
+        game_ebd = self.game_embedding(game_feature["game"])
+        return self.final_embedding(torch.concat([mode_ebd, game_ebd], dim=-1))
+
+
 class Conv1Model(nn.Module):
     def __init__(self):
         super().__init__()
@@ -176,9 +199,9 @@ class FeatureModel(rl.ModelValueLogit):
         )
         self.team_encoder = Conv1Model()
         self.action_history_encoder = ActionHistoryEncoder()
-
+        self.game_encoder = GameEncoder()
         self.head = nn.Sequential(
-            nn.Linear(384, 256),
+            nn.Linear(512, 256),
             nn.ReLU(inplace=True),
             nn.Linear(256, 20)
         )
@@ -189,8 +212,8 @@ class FeatureModel(rl.ModelValueLogit):
         team_ebd = self.team_encoder(obs["team_feature"])
         action_ebd = self.action_history_encoder(obs["action_history"])
         action_ebd = action_ebd[..., 0, :] + action_ebd[..., -1, :]
-
-        ebd = torch.concat([player_ebd, ball_ebd, team_ebd, action_ebd], dim=-1)
+        game_ebd = self.game_encoder(obs["game_feature"])
+        ebd = torch.concat([player_ebd, ball_ebd, team_ebd, action_ebd, game_ebd], dim=-1)
         value_logits = self.head(ebd)
         return {"checkpoints": value_logits[..., 0]}, value_logits[..., 1:] - 1e12 * obs["illegal_action_mask"]
 #%%

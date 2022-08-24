@@ -173,6 +173,29 @@ class Observation2Feature:
             return BallZone.OtherZone
 
     @staticmethod
+    def get_game_feature(obs, half_step):
+
+        def multi_scale(x, scale):
+            return 2 / (1 + np.exp(-np.array(x)[..., np.newaxis] / np.array(scale)))
+
+        # Match state
+        if obs['steps_left'] > half_step:
+            steps_left_half = obs['steps_left'] - half_step
+        else:
+            steps_left_half = obs['steps_left']
+
+        game_features = np.concatenate([
+            multi_scale(obs['score'], [1, 3, 5]).ravel(),  # 6
+            multi_scale(obs['score'][0] - obs['score'][1], [1, 3, 5]),  # 3
+            multi_scale(obs['steps_left'], [10, 100, 1000, 10000]),  # 4
+            multi_scale(steps_left_half, [10, 100, 1000, 10000]),  # 4
+        ]).astype(np.float32)
+
+        mode_index = np.array(obs['game_mode'], dtype=np.int64)
+
+        return {"mode_index": mode_index, 'game': game_features}
+
+    @staticmethod
     def get_ball_and_player_feature(obs, ball_zone, illegal_action_mask):
         player_num = obs['active']
 
@@ -326,17 +349,20 @@ class Observation2Feature:
         ball_feature, player_feature = Observation2Feature.get_ball_and_player_feature(obs, ball_zone,
                                                                                        illegal_action_mask)
         team_feature = Observation2Feature.get_team_feature(obs, num_left_players, num_right_players)
+        game_feature = Observation2Feature.get_game_feature(obs, half_step=1500)
         return {
             "team_feature": team_feature,
             "ball_feature": ball_feature,
             "player_feature": player_feature,
             "illegal_action_mask": illegal_action_mask,
-            "action_history": np.array(action_history)
+            "action_history": np.array(action_history),
+            "game_feature": game_feature
         }, ball_zone
 
     @staticmethod
     def reward(pre_left_yellow_card, pre_right_yellow_card, left_yellow_card, right_yellow_card,
-               score, ball_zone, pre_ball_owned_team, ball_owned_team):
+               score_reward, win_loss,
+               ball_zone, pre_ball_owned_team, ball_owned_team):
 
         left_yellow = np.sum(left_yellow_card) - np.sum(pre_left_yellow_card)
         right_yellow = np.sum(right_yellow_card) - np.sum(pre_right_yellow_card)
@@ -351,15 +377,14 @@ class Observation2Feature:
         #elif ball_owned_team == -1 and pre_ball_owned_team == 1:
          #   ball_zone_reward = 0
         #else:
-
         ball_zone_reward = ball_zone_to_reward[ball_zone]
 
-        return 5 * score + yellow_r + 0.003 * ball_zone_reward
+        return 5 * (score_reward + win_loss) + yellow_r + 0.003 * ball_zone_reward
 
 
 class FeatureEnv(gym.Wrapper):
     def __init__(self, reward_type: Literal["checkpoints", "customized"] = "checkpoints"):
-        env = gfootball_env.create_environment(env_name="11_vs_11_kaggle_easy",
+        env = gfootball_env.create_environment(env_name="11_vs_11_easy_stochastic",
                                                render=False,
                                                representation="raw",
                                                rewards="scoring,checkpoints"
@@ -393,11 +418,15 @@ class FeatureEnv(gym.Wrapper):
         obs, reward, done, info = self.env.step([action])
 
         truncated = False
-        if done:
-            truncated = True
-            done = False
-
         obs = obs[0]
+        win_loss = 0
+        if done:
+            my_score, opponent_score = obs['score']
+            if my_score > opponent_score:
+                win_loss = 1
+            elif my_score < opponent_score:
+                win_loss = -1
+
         feature, ball_zone = Observation2Feature.preprocess_obs(obs, self.action_history)
         if self.reward_type == "checkpoints":
             reward_infos = {"checkpoints": reward, "scoring": info["score_reward"]}
@@ -409,7 +438,9 @@ class FeatureEnv(gym.Wrapper):
                                                                       self.pre_right_yellow_card,
                                                                       left_yellow_card,
                                                                       right_yellow_card,
-                                                                      info["score_reward"], ball_zone,
+                                                                      info["score_reward"],
+                                                                      win_loss,
+                                                                      ball_zone,
                                                                       self.pre_ball_owned_team,
                                                                       ball_owned_team),
                             "scoring": info["score_reward"]}
