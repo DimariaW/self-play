@@ -383,7 +383,7 @@ class Observation2Feature:
 
 
 class FeatureEnv(gym.Wrapper):
-    def __init__(self, reward_type: Literal["checkpoints", "customized"] = "checkpoints"):
+    def __init__(self, reward_type: Literal["checkpoints", "customized", "scoring"] = "checkpoints"):
         env = gfootball_env.create_environment(env_name="11_vs_11_kaggle_easy",
                                                render=False,
                                                representation="raw",
@@ -430,6 +430,8 @@ class FeatureEnv(gym.Wrapper):
         feature, ball_zone = Observation2Feature.preprocess_obs(obs, self.action_history)
         if self.reward_type == "checkpoints":
             reward_infos = {"checkpoints": reward, "scoring": info["score_reward"]}
+        elif self.reward_type == "scoring":
+            reward_infos = {"checkpoints": info["score_reward"], "scoring": info["score_reward"]}
         else:
             left_yellow_card = obs["left_team_yellow_card"]
             right_yellow_card = obs["right_team_yellow_card"]

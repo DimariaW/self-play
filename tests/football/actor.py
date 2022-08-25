@@ -26,7 +26,7 @@ class ActorMain(core.ActorMainBase):
         # env = OpponentWrapper(env, opponents_pool)
 
     def create_env_and_agent(self, gather_id: int = None, actor_id: int = None):
-        env = FeatureEnv(reward_type="checkpoints")
+        env = FeatureEnv(reward_type="scoring")
         device = torch.device("cpu")
         model = FeatureModel().to(device)
         agent = IMPALAAgent(model, device=device)

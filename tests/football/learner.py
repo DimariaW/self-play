@@ -20,7 +20,7 @@ class MemoryMain(core.MemoryMainBase):
 
         traj_queue = mem.TrajQueueMP(maxlen=64,
                                      queue_sender=queue_sender,
-                                     batch_size=64,
+                                     batch_size=32,
                                      use_bz2=USE_BZ2,
                                      to_tensor=True,
                                      device=device,
@@ -47,15 +47,16 @@ class LearnerMain(core.LearnerMainBase):
         # logging.info("successfully loads weight from pretrained !")
 
         model = FeatureModel().to(device)
-        model_weights = pickle.load(open("./tests/football/models/feature_50000.pickle", "rb"))
+        model_weights = pickle.load(open("./tests/football/models/feature_30000.pickle", "rb"))
         model.set_weights(model_weights)
         logging.info("successfully loads weight from pretrained !")
 
         impala = alg.IMPALA(model,
                             queue_senders,
                             tensor_receiver,
-                            lr=0.00019896, gamma=0.993, lbd=1, vf=0.5 * 2, ef=0.00087453 * 2,
-                            #lr=0.0001, gamma=0.993, lbd=0.96, vf=1, ef=0.002,
+                            # lr=0.00019896, gamma=0.993, lbd=1, vf=0.5 * 2, ef=0.00087453 * 2,
+                            # lr=0.0001, gamma=0.993, lbd=0.96, vf=1, ef=0.002,
+                            lr=0.0001, gamma=0.993, lbd=1, vf=1, ef=0.0002,
                             tensorboard_dir=os.path.join(self.logger_file_dir, "train_info"),
                             vtrace_key=["checkpoints"],
                             upgo_key=["checkpoints"],
