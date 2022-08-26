@@ -20,7 +20,7 @@ class MemoryMain(core.MemoryMainBase):
 
         traj_queue = mem.TrajQueueMP(maxlen=64,
                                      queue_sender=queue_sender,
-                                     batch_size=32,
+                                     batch_size=64,
                                      use_bz2=USE_BZ2,
                                      to_tensor=True,
                                      device=device,
@@ -47,9 +47,9 @@ class LearnerMain(core.LearnerMainBase):
         # logging.info("successfully loads weight from pretrained !")
 
         model = FeatureModel().to(device)
-        model_weights = pickle.load(open("./tests/football/models/feature_30000.pickle", "rb"))
+        model_weights = pickle.load(open("./tests/football/models/feature_110000.pickle", "rb"))
         model.set_weights(model_weights)
-        logging.info("successfully loads weight from pretrained !")
+        logging.info("successfully loads weight from pretrained!")
 
         impala = alg.IMPALA(model,
                             queue_senders,

@@ -384,7 +384,7 @@ class Observation2Feature:
 
 class FeatureEnv(gym.Wrapper):
     def __init__(self, reward_type: Literal["checkpoints", "customized", "scoring"] = "checkpoints"):
-        env = gfootball_env.create_environment(env_name="11_vs_11_kaggle_level2",
+        env = gfootball_env.create_environment(env_name="11_vs_11_kaggle_easy",
                                                render=False,
                                                representation="raw",
                                                rewards="scoring,checkpoints"
