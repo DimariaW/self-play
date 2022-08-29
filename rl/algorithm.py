@@ -318,9 +318,11 @@ class IMPALA(ActorCriticBase):
         done = batch["done"]  # shape(B, T)
         bootstrap_mask = 1. - batch["only_bootstrap"]  # 0表示被mask掉, shape(B, T)
 
-        value_info, action_logit = self.model(obs)  # shape: B*T, B*T*N*act_dim | B*T*act_dim
+        info = self.model(obs)  # shape: B*T, B*T*N*act_dim | B*T*act_dim
+        value_info = info["value_info"]
+        action_logits = info["logits"]
         # get behavior log prob
-        action_log_prob = torch.log_softmax(action_logit, dim=-1)
+        action_log_prob = torch.log_softmax(action_logits, dim=-1)
         action_log_prob = action_log_prob.gather(-1, action.unsqueeze(-1)).squeeze(-1)  # B*T*N | B*T
         log_rho = action_log_prob.detach() - behavior_log_prob
         rho = torch.exp(log_rho)
@@ -390,7 +392,7 @@ class IMPALA(ActorCriticBase):
                 actor_loss += actor_loss_local
                 actor_losses[key+"_upgo"] = actor_loss_local.item()
 
-        entropy = torch.sum(action_head_mask * torch.distributions.Categorical(logits=action_logit).entropy())
+        entropy = torch.sum(action_head_mask * torch.distributions.Categorical(logits=action_logits).entropy())
 
         loss = actor_loss + self.vf * critic_loss - self.ef * entropy
 

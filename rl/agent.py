@@ -35,12 +35,6 @@ class Agent:
         function that should be implemented when model is rnn
         """
         pass
-
-    def get_hidden(self):
-        """
-        function that get the hidden state ( np.ndarray)
-        """
-        pass
 #%%
 
 
@@ -54,22 +48,32 @@ class A2CAgent(Agent):
         self.model_index = model_index
 
     @torch.no_grad()
-    def sample(self, observation: ObsType) -> Dict:
+    def sample(self, obs: ObsType) -> Dict:
         self.model.eval()
-        observation = utils.to_tensor(observation, device=self.device)
-        values, logits = self.model(observation)
-        action_idx = torch.distributions.Categorical(logits=logits).sample().cpu().numpy()
-        for key, value in values.items():
-            values[key] = value.cpu().numpy()
-        return {"action": action_idx, "values": values}
+        obs = utils.to_tensor(obs, device=self.device)
+        infos = self.model(obs)
+        action_idx = torch.distributions.Categorical(logits=infos["logits"]).sample().cpu().numpy()
+        hidden = infos.get("hidden", None)
+        if hidden is not None:
+            hidden = utils.to_numpy(hidden)
+            return {"action": utils.to_numpy(action_idx),
+                    "hidden": hidden}
+        else:
+            return {"action": utils.to_numpy(action_idx)}
 
     @torch.no_grad()
-    def predict(self, observation: ObsType) -> Dict:
+    def predict(self, obs: ObsType) -> Dict:
         self.model.eval()
-        observation = utils.to_tensor(observation, device=self.device)
-        _, logits = self.model(observation)
-        action_idx = torch.argmax(logits, dim=-1).cpu().numpy()
-        return {"action": action_idx}
+        obs = utils.to_tensor(obs, device=self.device)
+        infos = self.model(obs)
+        action_idx = torch.argmax(infos["logits"], dim=-1).cpu().numpy()
+        hidden = infos.get("hidden", None)
+        if hidden is not None:
+            hidden = utils.to_numpy(hidden)
+            return {"action": utils.to_numpy(action_idx),
+                    "hidden": hidden}
+        else:
+            return {"action": utils.to_numpy(action_idx)}
 
     def set_weights(self, weights: WeightsType, index: IndexType):
         self.model.set_weights(weights)
@@ -82,27 +86,32 @@ class A2CAgent(Agent):
     def model_id(self) -> Tuple[str, Optional[int]]:
         return self.model_name, self.model_index
 
+    def init_hidden(self, batch_size: int):
+        hidden = self.model.init_hidden(batch_size)
+        if hidden is not None:
+            hidden = utils.to_numpy(hidden)
+        return hidden
+
 
 class IMPALAAgent(A2CAgent):
     @torch.no_grad()
     def sample(self, observation: ObsType) -> Dict:
         self.model.eval()
         state = utils.to_tensor(observation, device=self.device)
-        _, logits = self.model(state)
-        action_idx = torch.distributions.Categorical(logits=logits).sample()
-        log_prob = torch.log_softmax(logits, dim=-1)
+        infos = self.model(state)
+        action_idx = torch.distributions.Categorical(logits=infos["logits"]).sample()
+
+        log_prob = torch.log_softmax(infos["logits"], dim=-1)
         behavior_log_prob = torch.gather(log_prob, dim=-1, index=action_idx.unsqueeze(-1)).squeeze(-1)
-        return {"action": action_idx.cpu().numpy(), "behavior_log_prob": behavior_log_prob.cpu().numpy()}
-
-    def get_hidden(self):
-        hidden = self.model.get_hidden()
+        hidden = infos.get("hidden", None)
         if hidden is not None:
-            return utils.to_numpy(hidden)
-
-    def init_hidden(self, batch_size: int):
-        hidden = self.model.init_hidden(batch_size)
-        if hidden is not None:
-            return utils.to_numpy(hidden)
+            hidden = utils.to_numpy(hidden)
+            return {"action": utils.to_numpy(action_idx),
+                    "behavior_log_prob": utils.to_numpy(behavior_log_prob),
+                    "hidden": hidden}
+        else:
+            return {"action": utils.to_numpy(action_idx),
+                    "behavior_log_prob": utils.to_numpy(behavior_log_prob)}
 
 
 class PPOAgent(A2CAgent):

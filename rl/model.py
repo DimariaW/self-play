@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from collections import OrderedDict
 
-from typing import Dict, Tuple, List, Union
+from typing import Dict, Tuple, List, Union, TypedDict, Optional
 #%% base model class
 
 
@@ -37,8 +37,13 @@ class Model(nn.Module):
 #%% a2c, impala, ppo model class, return value_infos and logits
 
 
+ReturnType = TypedDict("ReturnType", {"value_infos": Dict[str, torch.Tensor],
+                                      "logits": torch.Tensor,
+                                      "hidden": Optional[torch.Tensor]})
+
+
 class ModelValueLogit(Model):
-    def forward(self, obs: Union[Dict, Tuple, List, torch.Tensor]) -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
+    def forward(self, obs: Union[Dict, Tuple, List, torch.Tensor]) -> ReturnType:
         """
         obs: batched input
         return: value_infos and logits, support multi-head value.
@@ -46,10 +51,7 @@ class ModelValueLogit(Model):
         raise NotImplementedError
 
     def init_hidden(self, batch_size: int):
-        pass
-
-    def get_hidden(self):
-        pass
+        return None
 
 
 

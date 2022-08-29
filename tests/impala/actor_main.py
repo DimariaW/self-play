@@ -3,7 +3,7 @@ from tests.impala.config import CONFIG, LEAGUE_ADDRESS, MEMORY_ADDRESS, MODEL_SE
 from rl.core import open_gather
 
 if __name__ == "__main__":
-    logger_file_dir = f"./log/{CONFIG['env_name'] + '_lstm'}/actors/"
+    logger_file_dir = f"./log/{CONFIG['name']}/actors/"
     actor_main = ActorMain(num_steps=32, logger_file_dir=logger_file_dir)
 
     open_gather(num_gathers=8,

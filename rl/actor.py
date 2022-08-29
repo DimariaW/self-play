@@ -13,16 +13,17 @@ import multiprocessing as mp
 
 from collections import defaultdict
 
-from rl.utils import batchify, set_process_logger, wrap_traceback, get_element_from_batch
+import rl.utils as utils
 
 
 #%%
 class Env(Protocol):
     def reset(self, *args, **kwargs) -> Any:
+        # return obs
         ...
 
     def step(self, action) -> Tuple[Any, Dict[str, float], bool, bool, Dict[str, Any]]:
-        # discrete action space, return next_obs, reward_infos, done, truncated, info
+        # return next_obs, reward_infos, done, truncated, info
         ...
 
 
@@ -56,6 +57,8 @@ class Actor:
                  agent: Agent,
                  # 一次采样的步数
                  num_steps: int = 0,
+                 get_full_episodes: bool = False,
+                 # for predict
                  num_episodes: int = 0,
                  ):
         """
@@ -68,6 +71,7 @@ class Actor:
         self.agent = agent
 
         self.num_steps = num_steps
+        self.get_full_episodes = get_full_episodes
         self.num_episodes = num_episodes
 
         self.total_episodes = 0
@@ -83,7 +87,7 @@ class Actor:
         hidden = self.agent.init_hidden(batch_size=1)
         obs = self.env.reset(*args, **kwargs)
         if hidden is not None:
-            self.obs = {"observation": obs, "hidden": get_element_from_batch(hidden, 0)}
+            self.obs = {"observation": obs, "hidden": utils.get_element_from_batch(hidden, 0), "init_hidden": True}
         else:
             self.obs = obs
         self.done = False
@@ -96,103 +100,21 @@ class Actor:
         """
         self.agent.set_weights(model_weights, model_id[1])
 
-    def sample(self):
-        # episode generation
-        if self.obs is None:
-            raise RuntimeError("need reset env  in advance!")
-
-        moment_list = []
-        step = 0
-        while step < self.num_steps:
-            moment = dict()
-            moment['observation'] = self.obs
-            # sample from batch obs and get hidden and action
-            action_info_batched = self.agent.sample(batchify([self.obs], unsqueeze=0))
-            action_info = get_element_from_batch(action_info_batched, 0)
-            moment.update(action_info)
-            # step
-            obs, reward_info, self.done, self.truncated, info = self.env.step(moment['action'])
-            hidden = self.agent.get_hidden()
-            if hidden is not None:
-                self.obs = {"observation": obs, "hidden": get_element_from_batch(hidden, 0)}
-            else:
-                self.obs = obs
-            step += 1
-            moment["reward_info"] = reward_info
-            moment["done"] = self.done
-            moment["only_bootstrap"] = False
-            moment_list.append(moment)
-            # update info
-            self._update_current_episode_info(reward_info)
-
-            if self.done or self.truncated:
-                if self.truncated:
-                    bootstrap_moment = {
-                        "observation": self.obs,
-                        "reward_info": reward_info,
-                        "done": True,
-                        "only_bootstrap": True
-                    }
-                    bootstrap_moment.update(action_info)
-                    moment_list.append(bootstrap_moment)
-                    step += 1
-
-                self._record_update_when_done(info)
-                yield "sample_infos", self.current_episode_info  # scoring, checkpoints, model_id, opponent_id
-                # need reset env outside
-                if self.done or self.truncated:
-                    raise RuntimeError("need call reset env outside the generator!")
-
-        if step == self.num_steps:
-            bootstrap_moment = moment_list[-1]
-            bootstrap_moment["observation"] = self.obs
-            bootstrap_moment["done"] = True
-            bootstrap_moment["only_bootstrap"] = True
-            moment_list.append(bootstrap_moment)
-        yield "episodes", moment_list
-
-    def sample_generator(self):
+    @staticmethod
+    def _update_moment_from_action_info(moment, action_info):
         """
-        infinitely sample
+        update moment from action_info except hidden
         """
-        while True:
-            sample = self.sample()
-            for cmd, data in sample:
-                yield cmd, data
+        for key, value in action_info.items():
+            if key != "hidden":
+                moment[key] = value
 
-    def predict(self):
-        if self.obs is None:
-            raise RuntimeError("need call reset env advance!")
-
-        num_episodes = 0
-
-        while num_episodes < self.num_episodes:
-
-            action_info_batched = self.agent.sample(batchify([self.obs], unsqueeze=0))
-            action_info = get_element_from_batch(action_info_batched, 0)
-            obs, reward_info, self.done, self.truncated, info = self.env.step(action_info['action'])
-            hidden = self.agent.get_hidden()
-            if hidden is not None:
-                self.obs = {"observation": obs, "hidden": get_element_from_batch(hidden, 0)}
-            else:
-                self.obs = obs
-            self._update_current_episode_info(reward_info)
-
-            if self.done or self.truncated:
-                num_episodes += 1
-                self._record_update_when_done(info)
-                yield "eval_infos", self.current_episode_info  # scoring, checkpoints, model_id, opponent_id
-                if self.done or self.truncated:
-                    raise RuntimeError("need call reset env outside the generator!")
-
-    def predict_generator(self):
-        """
-        infinitely predict
-        """
-        while True:
-            predict = self.predict()
-            for cmd, data in predict:
-                yield cmd, data
+    def _update_obs_from_action_info(self, obs, action_info):
+        hidden = action_info.get("hidden", None)
+        if hidden is not None:
+            self.obs = {"observation": obs, "hidden": hidden, "init_hidden": False}
+        else:
+            self.obs = obs
 
     def _update_current_episode_info(self, reward_info):
         self.current_episode_info["steps"] += 1
@@ -211,6 +133,154 @@ class Actor:
         meta_info = env_info
         meta_info.update(agent_id=self.agent.model_id)
         self.current_episode_info.update(meta_info=meta_info)
+
+    def _sample_num_steps(self):
+        # episode generation
+        if self.obs is None:
+            raise RuntimeError("need reset env  in advance!")
+
+        moment_list = []
+        step = 0
+        while step < self.num_steps:
+            moment = dict()
+            moment['observation'] = self.obs
+            # sample from batch obs and get hidden and action
+            action_info_batched = self.agent.sample(utils.batchify([self.obs], unsqueeze=0))
+            # action for env.step, hidden for next obs
+            action_info = utils.get_element_from_batch(action_info_batched, 0)
+            self._update_moment_from_action_info(moment, action_info)
+            # step
+            obs, reward_info, self.done, self.truncated, info = self.env.step(moment['action'])
+            step += 1
+            moment["reward_info"] = reward_info
+            moment["done"] = self.done
+            moment["only_bootstrap"] = False
+            moment_list.append(moment)
+            # update obs
+            self._update_obs_from_action_info(obs, action_info)
+            # update info
+            self._update_current_episode_info(reward_info)
+
+            if self.done or self.truncated:
+                if self.truncated:
+                    bootstrap_moment = {
+                        "observation": self.obs,
+                        "reward_info": reward_info,
+                        "done": True,
+                        "only_bootstrap": True
+                    }
+                    self._update_moment_from_action_info(bootstrap_moment, action_info)
+                    moment_list.append(bootstrap_moment)
+                    step += 1
+                self._record_update_when_done(info)
+                yield "sample_infos", self.current_episode_info  # scoring, checkpoints, model_id, opponent_id
+                # need reset env outside
+                if self.done or self.truncated:
+                    raise RuntimeError("need call reset env outside the generator!")
+
+        if step == self.num_steps:
+            bootstrap_moment = moment_list[-1]
+            bootstrap_moment["observation"] = self.obs
+            bootstrap_moment["done"] = True
+            bootstrap_moment["only_bootstrap"] = True
+            moment_list.append(bootstrap_moment)
+        yield "episodes", moment_list
+
+    def _sample_full_episodes(self):
+        # episode generation
+        if self.obs is None:
+            raise RuntimeError("need reset env  in advance!")
+
+        moment_list = []
+        step = 0
+        while True:
+            moment = dict()
+            moment['observation'] = self.obs
+            # sample from batch obs and get hidden and action
+            action_info_batched = self.agent.sample(utils.batchify([self.obs], unsqueeze=0))
+            # action for env.step, hidden for next obs
+            action_info = utils.get_element_from_batch(action_info_batched, 0)
+            self._update_moment_from_action_info(moment, action_info)
+            # step
+            obs, reward_info, self.done, self.truncated, info = self.env.step(moment['action'])
+            step += 1
+            moment["reward_info"] = reward_info
+            moment["done"] = self.done
+            moment["only_bootstrap"] = False
+            moment_list.append(moment)
+            # update obs
+            self._update_obs_from_action_info(obs, action_info)
+            # update info
+            self._update_current_episode_info(reward_info)
+
+            if self.done or self.truncated:
+                if self.truncated:
+                    bootstrap_moment = {
+                        "observation": self.obs,
+                        "reward_info": reward_info,
+                        "done": True,
+                        "only_bootstrap": True
+                    }
+                    self._update_moment_from_action_info(bootstrap_moment, action_info)
+                    moment_list.append(bootstrap_moment)
+                    step += 1
+                self._record_update_when_done(info)
+                yield "sample_infos", self.current_episode_info  # scoring, checkpoints, model_id, opponent_id
+                # need reset env outside
+                if self.done or self.truncated:
+                    raise RuntimeError("need call reset env outside the generator!")
+
+                if step >= self.num_steps:
+                    break
+
+        yield "episodes", moment_list
+
+    def sample(self):
+        if self.get_full_episodes:
+            return self._sample_full_episodes()
+        else:
+            return self._sample_num_steps()
+
+    def sample_generator(self):
+        """
+        infinitely sample
+        """
+        while True:
+            sample = self.sample()
+            for cmd, data in sample:
+                yield cmd, data
+
+    def predict(self):
+        if self.obs is None:
+            raise RuntimeError("need call reset env advance!")
+
+        num_episodes = 0
+
+        while num_episodes < self.num_episodes:
+
+            action_info_batched = self.agent.predict(utils.batchify([self.obs], unsqueeze=0))
+            action_info = utils.get_element_from_batch(action_info_batched, 0)
+            obs, reward_info, self.done, self.truncated, info = self.env.step(action_info['action'])
+            self._update_obs_from_action_info(obs, action_info)
+            self._update_current_episode_info(reward_info)
+
+            if self.done or self.truncated:
+                num_episodes += 1
+                self._record_update_when_done(info)
+                yield "eval_infos", self.current_episode_info  # scoring, checkpoints, model_id, opponent_id
+                if self.done or self.truncated:
+                    raise RuntimeError("need call reset env outside the generator!")
+
+    def predict_generator(self):
+        """
+        infinitely predict
+        """
+        while True:
+            predict = self.predict()
+            for cmd, data in predict:
+                yield cmd, data
+
+
 
 
 #%%
@@ -371,7 +441,7 @@ class ActorClientEvaluator(ActorClientBase):
 
 
 class ActorMainBase:
-    def __init__(self, num_steps: int = 32, logger_file_dir: str = None):
+    def __init__(self, num_steps: int = 32, get_full_episodes=False, logger_file_dir: str = None):
         """
         the class of create actor and run sampling or predicting.
         the user should inherit this class and implement create_env_and_agent.
@@ -384,8 +454,9 @@ class ActorMainBase:
         self.logger_file_dir = logger_file_dir
         self.logger_file_path = None
         self.num_steps = num_steps
+        self.get_full_episodes = get_full_episodes
 
-    @wrap_traceback
+    @utils.wrap_traceback
     def __call__(self, infos: Tuple[int, int, str, bool, bool],
                  queue_gather2actor: mp.Queue,
                  queue_actor2gather: mp.Queue):
@@ -395,11 +466,12 @@ class ActorMainBase:
 
         if self.logger_file_dir is not None:
             self.logger_file_path = os.path.join(self.logger_file_dir, f"gather_{gather_id}_actor_{actor_id}.txt")
-        set_process_logger(file_path=self.logger_file_path)
+        utils.set_process_logger(file_path=self.logger_file_path)
 
         env, agent = self.create_env_and_agent(gather_id, actor_id)
         actor = Actor(env, agent,
                       num_steps=self.num_steps,
+                      get_full_episodes=self.get_full_episodes,
                       num_episodes=1,
                       )
         if actor_role == "sampler":
@@ -622,7 +694,7 @@ AddrType = Tuple[str, int]
 RoleType = Union[Literal["sampler", "evaluator"], str]
 
 
-@wrap_traceback
+@utils.wrap_traceback
 def _open_per_gather(gather_id: int,
                      role: RoleType,
                      num_actors: int,
@@ -633,7 +705,7 @@ def _open_per_gather(gather_id: int,
                      use_bz2: bool,
                      self_play: bool,
                      logger_file_path: str):
-    set_process_logger(file_path=logger_file_path)
+    utils.set_process_logger(file_path=logger_file_path)
     # do some checks
     assert role in ["sampler", "evaluator"]
     if role == "sampler" and memory_server_address is None:
@@ -647,7 +719,7 @@ def _open_per_gather(gather_id: int,
         model_server_conn = connection.connect_socket_connection(*model_server_address)
         logging.info(f"successfully connected! the gather {gather_id} is starting!")
         gather = GatherSampler(gather_id=gather_id,
-                               role = role,
+                               role=role,
                                num_actors=num_actors,
                                league_conn=league_conn,
                                memory_server_conn=memory_server_conn,

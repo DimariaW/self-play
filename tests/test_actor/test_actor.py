@@ -4,25 +4,27 @@ import gym
 
 from rl.agent import IMPALAAgent, A2CAgent, PPOAgent
 from rl.actor import Actor
-from rl.utils import set_process_logger
+from rl.utils import set_process_logger, batchify, to_tensor
 
-from tests.test_env_models.env_model_gym import EnvWrapper, Model
+from tests.env_models import cartpole
 
 if __name__ == "__main__":
     set_process_logger()
-    env = gym.make("LunarLander-v2", max_episode_steps=100)
-    env = EnvWrapper(env)
+    env = cartpole.Env()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = Model(8, 4).to(device)
-    agent1 = IMPALAAgent(model, device)
-    agent2 = A2CAgent(model, device)
-    agent3 = PPOAgent(model, device)
+    # model1 = cartpole.Model()
+    model1 = cartpole.ModelPseudoRNN()
+    agent1 = IMPALAAgent(model1, device)
 
-    actor = Actor(env, agent2, num_steps=32, num_episodes=1)
+    actor = Actor(env, agent1, num_steps=32, get_full_episodes=True, num_episodes=1)
     actor.reset_env()
 
-    for args, data in actor.sample_generator():
+    for args, data in actor.sample():
+        if args == "episodes":
+            data = batchify([batchify(data, unsqueeze=0)], unsqueeze=0)
+            data = to_tensor(data)
+            output = model1(data["observation"])
         if args == "sample_infos":
             print(data)
             actor.reset_env()

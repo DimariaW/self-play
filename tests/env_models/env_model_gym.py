@@ -7,14 +7,16 @@ import torch.nn as nn
 import rl.model as model
 
 
-class EnvWrapper(gym.Wrapper):
-    def __init__(self, env, reward_threshold=1):
+
+class LunarLanderEnv(gym.Wrapper):
+    def __init__(self):
+        env = gym.make("LunarLander-v2")
+        self.reward_threshold = 200
         super().__init__(env)
         """
         for LunarLander-v2, the threshold is 200, 
         for CartPole-v1, the threshold is 475
         """
-        self.reward_threshold = reward_threshold
 
     def reset(self):
         return self.env.reset()
@@ -24,7 +26,7 @@ class EnvWrapper(gym.Wrapper):
         truncated = info.get('TimeLimit.truncated', False)
         if done and truncated:
             done = False
-        return obs, {"reward": reward/self.reward_threshold}, done, truncated, info
+        return obs, {"reward": reward / self.reward_threshold}, done, truncated, info
 
 
 class DiscreteActionSpace(gym.ActionWrapper):
@@ -43,10 +45,7 @@ class DiscreteActionSpace(gym.ActionWrapper):
         return (action - self.low_bound) // self.bin_length
 
 
-# orthogonal init
-def orthogonal_init(layer, gain=1.0):
-    nn.init.orthogonal_(layer.weight, gain=gain)
-    nn.init.constant_(layer.bias, 0)
+
 
 
 class ModelMultiHead(model.ModelValueLogit):
@@ -94,44 +93,7 @@ class Model(model.ModelValueLogit):
         return {"reward": output[..., 0]}, output[..., 1:]  # value and logit, value 的最后一维度需要squeeze
 
 
-class ModelLSTM(model.ModelValueLogit):
-    def __init__(self, state_dim: int, num_act: int):
-        super().__init__()
-        self.fc1 = nn.Linear(state_dim, 128)
-        self.relu1 = nn.ReLU()
-        self.rnn = nn.GRUCell(input_size=128,
-                              hidden_size=128)
-        self.fc2 = nn.Linear(128, num_act)
-        self.hidden = None, None
-        self.state_dim = state_dim
-        orthogonal_init(self.fc1)
-        orthogonal_init(self.fc2)
 
-    def forward(self, obs: Dict) -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
-        observation = obs["observation"]  # shape(B, T, state_dim)
-        shape = observation.shape
-        if len(observation.shape) == 3:  # train model
-            h = obs["hidden"][:, 0, :]  # shape(B, 128)
-            h1 = self.relu1(self.fc1(observation))
-            h2 = []
-            for i in range(shape[1]):
-                h = self.rnn(h1[:, i, :], h)
-                h2.append(h)
-            output = self.fc2(torch.stack(h2, dim=1))
-            return {"reward": output[..., 0]}, output[..., 1:].unsqueeze(-2)
-
-        h1 = self.relu1(self.fc1(observation))
-        h = obs["hidden"]
-        h = self.rnn(h1, h)
-        self.hidden = h
-        output = self.fc2(h)
-        return {"reward": output[..., 0]}, output[..., 1:].unsqueeze(-2)
-
-    def init_hidden(self, batch_size: int):
-        return torch.zeros(batch_size, 128)
-
-    def get_hidden(self):
-        return self.hidden
 
 
 

@@ -7,7 +7,7 @@ import rl.memory as mem
 import rl.algorithm as alg
 import rl.league as lg
 
-from tests.test_env_models.env_model_gym import Model, ModelLSTM, ModelMultiHead
+from tests.env_models import cartpole
 from tests.impala.config import CONFIG, USE_BZ2
 
 
@@ -33,7 +33,7 @@ class LearnerMain(core.LearnerMainBase):
     def main(self, queue_receiver: mp.Queue, queue_senders):
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         tensor_receiver = self.create_receiver(queue_receiver)
-        model = ModelMultiHead(CONFIG["obs_dim"], CONFIG["action_head"], num_act=CONFIG["num_bins"]).to(device)
+        model = CONFIG["model_class"](**CONFIG["model_args"]).to(device)
         # model = Model(CONFIG["obs_dim"], CONFIG["num_act"], use_orthogonal_init=True, use_tanh=False).to(device)
         # model = ModelLSTM(CONFIG["obs_dim"], CONFIG["num_act"]).to(device)
         impala = alg.IMPALA(model, queue_senders, tensor_receiver,
@@ -41,7 +41,8 @@ class LearnerMain(core.LearnerMainBase):
                             tensorboard_dir=os.path.join(self.logger_file_dir, "metrics"),
                             vtrace_key=["reward"],
                             # only_critic=["reward"],
-                            upgo_key=["reward"])
+                            # upgo_key=["reward"]
+                            )
         impala.run()
 
 
