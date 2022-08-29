@@ -215,12 +215,15 @@ class FeatureModel(rl.ModelValueLogit):
         game_ebd = self.game_encoder(obs["game_feature"])
         ebd = torch.concat([player_ebd, ball_ebd, team_ebd, action_ebd, game_ebd], dim=-1)
         value_logits = self.head(ebd)
-        return {"checkpoints": value_logits[..., 0]}, value_logits[..., 1:] - 1e12 * obs["illegal_action_mask"]
+        return {
+            "value_info": {"checkpoints": value_logits[..., 0]},
+            "logits": value_logits[..., 1:] - 1e12 * obs["illegal_action_mask"]
+        }
 #%%
 
 
 class BuiltinAI(agent.Agent):
-    def _init__(self, name):
+    def __init__(self, name):
         self.name = name
 
     def predict(self, obs):

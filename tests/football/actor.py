@@ -1,7 +1,7 @@
 import random
 
 import gfootball.env as gfootball_env
-from tests.football.football_env import EnvWrapper, FeatureEnv
+from tests.football.football_env import EnvWrapper, FeatureEnv, OpponentEnv
 from tests.football.football_model import CNNModel, FeatureModel
 from rl.agent import IMPALAAgent
 import rl.core as core
@@ -9,7 +9,7 @@ import torch
 
 
 class ActorMain(core.ActorMainBase):
-    def create_env_and_agent_(self, gather_id: int = None, actor_id: int = None):
+    def _create_env_and_agent(self, gather_id: int = None, actor_id: int = None):
 
         env = gfootball_env.create_environment(env_name="11_vs_11_kaggle_level2",
                                                render=False,
@@ -26,10 +26,16 @@ class ActorMain(core.ActorMainBase):
         # env = OpponentWrapper(env, opponents_pool)
 
     def create_env_and_agent(self, gather_id: int = None, actor_id: int = None):
-        env = FeatureEnv(reward_type="checkpoints")
+        # env = FeatureEnv(reward_type="checkpoints")
         device = torch.device("cpu")
         model = FeatureModel().to(device)
+        opponent_agent = IMPALAAgent(model, device=device)
+        opponents_pool = {"feature": opponent_agent}
+
+        env = OpponentEnv(opponents_pool)
+        model = FeatureModel().to(device)
         agent = IMPALAAgent(model, device=device)
+
         return env, agent
 
 

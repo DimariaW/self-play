@@ -8,14 +8,14 @@ import rl.algorithm as alg
 import rl.league as lg
 import logging
 
-from tests.football.football_model import CNNModel, FeatureModel
+from tests.football.football_model import FeatureModel
 
 from tests.football.config import USE_BZ2
 
 
 class MemoryMain(core.MemoryMainBase):
     def main(self, queue_sender: mp.Queue):
-        device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         logging.info(f"the data will be in {device}")
 
         traj_queue = mem.TrajQueueMP(maxlen=64,
@@ -34,20 +34,13 @@ class MemoryMain(core.MemoryMainBase):
 
 class LearnerMain(core.LearnerMainBase):
     def main(self, queue_receiver: mp.Queue, queue_senders):
-        device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         logging.info(f"the data will be in {device}")
 
         tensor_receiver = self.create_receiver(queue_receiver, to_tensor=False)
 
-        # model = CNNModel((16, 72, 96), 19, name="cnn").to(device)
-        # model_weights = pickle.load(open("./tests/football/models/cnn_400000.pickle", "rb"))
-        # if type(model_weights) == bytes:
-        #   model_weights = pickle.loads(model_weights)
-        # model.set_weights(model_weights)
-        # logging.info("successfully loads weight from pretrained !")
-
         model = FeatureModel().to(device)
-        model_weights = pickle.load(open("./tests/football/models/feature_110000.pickle", "rb"))
+        model_weights = pickle.load(open("./tests/football/models/feature_380000.pickle", "rb"))
         model.set_weights(model_weights)
         logging.info("successfully loads weight from pretrained!")
 
@@ -74,10 +67,18 @@ class ModelServerMain(core.ModelServerMainBase):
 class LeagueMain(core.ModelServerMainBase):
     def main(self, queue_receiver: mp.Queue):
         queue_receiver = self.create_receiver(queue_receiver)
+        """
         league = lg.ModelServer4RecordAndEval(queue_receiver, self.port, use_bz2=USE_BZ2,
                                               cache_weights_intervals=10000,
                                               save_weights_dir=os.path.join(self.logger_file_dir, "models"),
                                               tensorboard_dir=os.path.join(self.logger_file_dir, "metrics"))
+        """
+        league = lg.League(queue_receiver,
+                           self.port,
+                           use_bz2=USE_BZ2,
+                           cache_weights_intervals=30000,
+                           save_weights_dir=os.path.join(self.logger_file_dir, "models"),
+                           tensorboard_dir=os.path.join(self.logger_file_dir, "metrics"))
         league.run()
 
 

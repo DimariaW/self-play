@@ -14,5 +14,5 @@ if __name__ == "__main__":
                 model_server_address=cfg.MODEL_ADDRESS,
                 actor_main=actor_main,
                 use_bz2=cfg.USE_BZ2,
-                self_play=False,
+                self_play=cfg.SELF_PLAY,
                 logger_file_dir=logger_file_dir)

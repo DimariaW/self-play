@@ -121,8 +121,7 @@ class ModelServer4RecordAndEval(ModelServer):
             self.num_received_infos = defaultdict(int)
             self.sw = tensorboardX.SummaryWriter(logdir=tensorboard_dir)
 
-    def _update_cached_weights(self):
-        super()._update_cached_weights()
+    def _save_cached_weights(self):
         if hasattr(self, "save_weights_dir"):
             if self.use_bz2:
                 weights = pickle.loads(bz2.decompress(self.cached_weights))
@@ -134,6 +133,11 @@ class ModelServer4RecordAndEval(ModelServer):
                             osp.join(self.save_weights_dir, f"{self.model_name}_{self.cached_weights_index}.pickle"),
                             "wb")
                         )
+
+    def _update_once(self):
+        if self.index.item() - self.cached_weights_index >= self.cache_weights_intervals:
+            self._update_cached_weights()
+            self._save_cached_weights()
 
     def _record_infos(self, conn: connection.PickledConnection, cmd: str, data: List[Dict[str, Any]]):
         for info in data:
@@ -190,10 +194,14 @@ class League(ModelServer4RecordAndEval):
         initialize opponents_pool, (model_name, model_index) : model_weights
         initialize opponents winning, (model_name, model_index) : winning_rate    # 当前cached weights 对每个对手的winning rate
         """
-        self.self_play_winning_rate = 0.5
+        self.self_play_winning_rate = 0.
         # exclude saved weights which is used to self-play
         self.opponents_pool: Dict[Tuple[str, Optional[int]], Optional[Mapping[str, np.ndarray], bytes]] = {}
         self.win_rate_to_opponents: Dict[Tuple[str, Optional[int]], float] = {}
+
+        self.add_opponent(self.model_name, self.cached_weights_index-1,
+                          weights=self.cached_weights,
+                          winning_rate=self.self_play_winning_rate)
 
     def add_opponent(self, name: str, index: Optional[int] = None,
                      weights: Optional[Union[Mapping[str, np.ndarray], bytes]] = None,
@@ -221,6 +229,8 @@ class League(ModelServer4RecordAndEval):
             self.add_opponent(self.model_name, self.cached_weights_index,
                               weights=self.cached_weights, winning_rate=self.self_play_winning_rate)
             self._update_cached_weights()
+            self.self_play_winning_rate = 0.
+            self._save_cached_weights()
 
     def run(self):
         create_response_functions: Dict[str, Callable] = {
@@ -269,7 +279,7 @@ class League(ModelServer4RecordAndEval):
 
     def _send_opponent(self, conn: connection.PickledConnection, cmd: str, data: str, ignore_priority=False):
         def normalize(winning_rate: tuple, p=1):
-            logits = (1. - np.array(winning_rate) + 1e-5) ** p
+            logits = (1. - np.array(winning_rate) + 1e-3) ** p
             return logits / np.sum(logits)
 
         opponents_id, opponents_winning_rate = tuple(zip(*self.win_rate_to_opponents.items()))

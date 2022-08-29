@@ -27,6 +27,32 @@ class Env(gym.Wrapper):
         return obs, {"reward": reward/self.reward_threshold}, done, truncated, info
 
 
+class OpponentEnv(gym.Wrapper):
+    def __init__(self, name, reward_threshold):
+        env = gym.make(name)
+        self.reward_threshold = reward_threshold
+        super().__init__(env)
+        """ 
+        for CartPole-v1, the threshold is 475
+        for LunarLander-v2, the threshold is 200
+        """
+        self.opponent_id = None
+
+    def reset(self, model_id, model_weights):
+        self.opponent_id = model_id
+        return self.env.reset()
+
+    def step(self, action) -> Tuple[Any, Dict[str, float], bool, bool, Dict[str, Any]]:
+        obs, reward, done, info = self.env.step(action)
+        truncated = info.get('TimeLimit.truncated', False)
+        if done:
+            if truncated:
+                done = False
+            info["opponent_id"] = self.opponent_id
+            info["win"] = 1
+        return obs, {"reward": reward/self.reward_threshold}, done, truncated, info
+
+
 # orthogonal init
 def orthogonal_init(layer, gain=1.0):
     nn.init.orthogonal_(layer.weight, gain=gain)

@@ -455,6 +455,70 @@ class FeatureEnv(gym.Wrapper):
         return feature, reward_infos, done, truncated, info
 
 
+class OpponentEnv(gym.Wrapper):
+    def __init__(self, opponents_pool: Dict[str, agent.Agent]):
+        env = gfootball_env.create_environment(env_name="11_vs_11_kaggle",
+                                               render=False,
+                                               representation="raw",
+                                               rewards="scoring,checkpoints",
+                                               number_of_left_players_agent_controls=1,
+                                               number_of_right_players_agent_controls=1)
+        super().__init__(env)
+        self.opponents_pool = opponents_pool
+        self.opponent_agent = None
+        self.opponent_action_history = collections.deque(maxlen=8)
+        self.opponent_obs = None
+        self.action_history = collections.deque(maxlen=8)
+        self.scoring = 0
+
+    def reset(self, model_id: Tuple[str, Optional[int]], weights: Optional):
+        model_name, model_index = model_id
+        self.opponent_agent = self.opponents_pool[model_name]
+        self.opponent_agent.set_weights(weights, model_index)
+
+        obs = self.env.reset()
+        for _ in range(random.randint(0, 50)):
+            obs, reward, done, info = self.env.step([0, 0])
+
+        self.action_history.extend([0] * 8)
+        feature, _ = Observation2Feature.preprocess_obs(obs[0], self.action_history)
+
+        self.opponent_action_history.extend([0]*8)
+        self.opponent_obs, _ = Observation2Feature.preprocess_obs(obs[1], self.opponent_action_history)
+
+        self.scoring = 0
+        return feature
+
+    def step(self, action: int) -> Tuple[Any, Dict[str, float], bool, bool, Dict]:
+        self.action_history.append(action)
+
+        opponent_action = self.opponent_agent.predict(utils.to_numpy(self.opponent_obs, unsqueeze=0))["action"][0]
+        self.opponent_action_history.append(opponent_action)
+
+        obs, reward, done, info = self.env.step([action] + [opponent_action])
+
+        obs: list
+        reward: list
+        done: bool
+        info: dict
+
+        reward_infos = {"checkpoints": reward[0] - reward[1], "scoring": info["score_reward"]}
+
+        feature, _ = Observation2Feature.preprocess_obs(obs[0], self.action_history)
+        self.opponent_obs, _ = Observation2Feature.preprocess_obs(obs[1], self.opponent_action_history)
+
+        self.scoring += info["score_reward"]
+
+        truncated = False
+        if done:
+            info["win"] = int(self.scoring > 0)
+            info["opponent_id"] = self.opponent_agent.model_id
+
+        return feature, reward_infos, done, truncated, info
+
+#%%
+
+
 class FeatureEnv4MultiAgent(gym.Wrapper):
     def __init__(self, num_left=3, num_right=0):
         env = gfootball_env.create_environment(env_name="academy_3_vs_1_with_keeper",
@@ -488,8 +552,6 @@ class FeatureEnv4MultiAgent(gym.Wrapper):
                for observation, action_history in zip(obs, self.action_histories)]
 
         return utils.batchify(obs, unsqueeze=0), reward_infos, done, truncated, info
-
-#%%
 
 
 class SMMActionMaskWrapper(gym.Wrapper):

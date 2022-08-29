@@ -58,20 +58,6 @@ CONFIG = [
     },
 
     {
-        "name": "lunarlander-fc",
-        "env_class": cartpole.Env,
-        "env_args": {
-            "name": "LunarLander-v2",
-            "reward_threshold": 200,
-        },
-        "model_class": cartpole.Model,
-        "model_args": {
-            "obs_dim": 8,
-            "num_action": 4
-        }
-    },
-
-    {
         "name": "lunarlander-pseudo-rnn",
         "env_class": cartpole.Env,
         "env_args": {
@@ -97,9 +83,22 @@ CONFIG = [
             "obs_dim": 8,
             "num_action": 4
         }
-    }
+    },
 
-][2]
+    {
+     "name": "cartpole-opponent_test",
+     "env_class": cartpole.OpponentEnv,
+     "env_args": {
+         "name": "CartPole-v1",
+         "reward_threshold": 475,
+         },
+     "model_class": cartpole.Model,
+     "model_args": {
+         "obs_dim": 4,
+         "num_action": 2
+         }
+    }
+][6]
 
 USE_BZ2 = False
 

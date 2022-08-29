@@ -38,7 +38,7 @@ class LearnerMain(core.LearnerMainBase):
         # model = ModelLSTM(CONFIG["obs_dim"], CONFIG["num_act"]).to(device)
         impala = alg.IMPALA(model, queue_senders, tensor_receiver,
                             lr=2e-4, gamma=0.99, lbd=0.98, vf=0.5, ef=1e-4,
-                            tensorboard_dir=os.path.join(self.logger_file_dir, "metrics"),
+                            tensorboard_dir=os.path.join(self.logger_file_dir, "learn_info"),
                             vtrace_key=["reward"],
                             # only_critic=["reward"],
                             # upgo_key=["reward"]
@@ -56,8 +56,14 @@ class ModelServerMain(core.ModelServerMainBase):
 class LeagueMain(core.ModelServerMainBase):
     def main(self, queue_receiver: mp.Queue):
         queue_receiver = self.create_receiver(queue_receiver)
+        """
         league = lg.ModelServer4RecordAndEval(queue_receiver, self.port, use_bz2=USE_BZ2,
                                               cache_weights_intervals=1000,
                                               save_weights_dir=os.path.join(self.logger_file_dir, "models"),
                                               tensorboard_dir=os.path.join(self.logger_file_dir, "metrics"))
+        """
+        league = lg.League(queue_receiver, self.port, use_bz2=USE_BZ2,
+                           cache_weights_intervals=1000,
+                           save_weights_dir=os.path.join(self.logger_file_dir, "models"),
+                           tensorboard_dir=os.path.join(self.logger_file_dir, "metrics"))
         league.run()

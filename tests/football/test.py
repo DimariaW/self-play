@@ -47,7 +47,35 @@ def test_feature_env_4_multi_agent():
     next_obs, reward_infos, done, truncated, info = env.step(np.array([0, 0, 0]))
 
 
+def test_opponent_env():
+    from tests.football.football_env import OpponentEnv
+    from tests.football.football_model import FeatureModel, BuiltinAI
+    from rl.agent import IMPALAAgent
+    import rl.utils as utils
+    import pickle
+
+    utils.set_process_logger()
+
+    built_in_ai = BuiltinAI("ai")
+    agent = IMPALAAgent(FeatureModel())
+    opponents_pool = {built_in_ai.model_id[0]: built_in_ai, agent.model_id[0]: agent}
+    env = OpponentEnv(opponents_pool)
+    env.render()
+
+    test_agent = IMPALAAgent(FeatureModel())
+    weights = pickle.load(open("./models/feature_380000.pickle", "rb"))
+    index = 380000
+    test_agent.set_weights(weights, index)
+
+    obs = env.reset(test_agent.model_id, test_agent.get_weights())
+    while True:
+        obs, reward_infos, done, truncated, info = env.step(test_agent.predict(utils.to_numpy(obs, unsqueeze=0))["action"][0])
+        if done:
+            print(info)
+
+
 if __name__ == "__main__":
-    test_observation2feature()
-    test_feature_env_model()
-    test_feature_env_4_multi_agent()
+    # test_observation2feature()
+    # test_feature_env_model()
+    # test_feature_env_4_multi_agent()
+    test_opponent_env()
