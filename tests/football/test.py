@@ -20,7 +20,7 @@ def test_observation2feature():
 
 def test_feature_env_model():
     from tests.football.football_env import FeatureEnv
-    from tests.football.football_model import FeatureModel
+    from tests.football.feature_model import FeatureModel
     import rl.utils as utils
 
     env = FeatureEnv(reward_type="customized")
@@ -35,7 +35,7 @@ def test_feature_env_model():
 
 def test_feature_env_4_multi_agent():
     from tests.football.football_env import FeatureEnv4MultiAgent
-    from tests.football.football_model import FeatureModel
+    from tests.football.feature_model import FeatureModel
     import rl.utils as utils
     import numpy as np
 
@@ -49,7 +49,7 @@ def test_feature_env_4_multi_agent():
 
 def test_opponent_env():
     from tests.football.football_env import OpponentEnv
-    from tests.football.football_model import FeatureModel, BuiltinAI
+    from tests.football.feature_model import FeatureModel, BuiltinAI
     from rl.agent import IMPALAAgent
     import rl.utils as utils
     import pickle
@@ -63,7 +63,7 @@ def test_opponent_env():
     env.render()
 
     test_agent = IMPALAAgent(FeatureModel())
-    weights = pickle.load(open("./models/feature_380000.pickle", "rb"))
+    weights = pickle.load(open("model_weights/feature_380000.pickle", "rb"))
     index = 380000
     test_agent.set_weights(weights, index)
 

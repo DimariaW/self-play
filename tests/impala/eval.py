@@ -24,7 +24,7 @@ env = RenderWrapper(env)
 
 actor = rl_actor.Actor(env, agent, num_episodes=100)
 
-weights = pickle.load(open("./models/cnn_1500000.pickle", "rb"))
+weights = pickle.load(open("./model_weights/cnn_1500000.pickle", "rb"))
 index = 400000
 
 actor.reset_agent(("nodel", index), weights)

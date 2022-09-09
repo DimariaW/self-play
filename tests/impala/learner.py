@@ -59,11 +59,11 @@ class LeagueMain(core.ModelServerMainBase):
         """
         league = lg.ModelServer4RecordAndEval(queue_receiver, self.port, use_bz2=USE_BZ2,
                                               cache_weights_intervals=1000,
-                                              save_weights_dir=os.path.join(self.logger_file_dir, "models"),
+                                              save_weights_dir=os.path.join(self.logger_file_dir, "model_weights"),
                                               tensorboard_dir=os.path.join(self.logger_file_dir, "metrics"))
         """
         league = lg.League(queue_receiver, self.port, use_bz2=USE_BZ2,
                            cache_weights_intervals=1000,
-                           save_weights_dir=os.path.join(self.logger_file_dir, "models"),
+                           save_weights_dir=os.path.join(self.logger_file_dir, "model_weights"),
                            tensorboard_dir=os.path.join(self.logger_file_dir, "metrics"))
         league.run()

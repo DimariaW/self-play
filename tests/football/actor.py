@@ -1,81 +1,24 @@
-import random
 
-import gfootball.env as gfootball_env
-from tests.football.football_env import EnvWrapper, FeatureEnv, OpponentEnv
-from tests.football.football_model import CNNModel, FeatureModel
+from tests.football.football_env import OpponentEnv
+from tests.football.models import feature_model, tamak_model
 from rl.agent import IMPALAAgent
 import rl.core as core
-import torch
 
 
 class ActorMain(core.ActorMainBase):
-    def _create_env_and_agent(self, gather_id: int = None, actor_id: int = None):
+    def create_env_and_agents_pool(self, gather_id: int, actor_id: int):
+        agents_pool = {
+            "builtin_ai": feature_model.BuiltinAI(name="builtin_ai"),
+            "tamak": tamak_model.TamakAgent(model=tamak_model.FootballNet(name="tamak")),
+            "feature": IMPALAAgent(model=feature_model.FeatureModel("feature"))
+        }
 
-        env = gfootball_env.create_environment(env_name="11_vs_11_kaggle_level2",
-                                               render=False,
-                                               representation="raw",
-                                               rewards="scoring,checkpoints")
-        env = EnvWrapper(env, use_match_state=False)
-        device = torch.device("cpu")
-        model = CNNModel((16, 72, 96), 19, name="cnn").to(device)
-        agent = IMPALAAgent(model, device=device)
-        return env, agent
-        # opponents_pool = {}
-        # opponents_pool["cnn"] = IMPALAAgent(model, device=device)
-        # opponents_pool["builtin_ai"] = BuiltinAI()
-        # env = OpponentWrapper(env, opponents_pool)
-
-    def create_env_and_agent(self, gather_id: int = None, actor_id: int = None):
-        # env = FeatureEnv(reward_type="checkpoints")
-        device = torch.device("cpu")
-        model = FeatureModel().to(device)
-        opponent_agent = IMPALAAgent(model, device=device)
-        opponents_pool = {"feature": opponent_agent}
-
-        env = OpponentEnv(opponents_pool)
-        model = FeatureModel().to(device)
-        agent = IMPALAAgent(model, device=device)
-
-        return env, agent
-
-
-if __name__ == "__main__":
-    import rl.utils as utils
-    import logging
-    from rl.actor import Actor
-    utils.set_process_logger()
-
-    env_, agent_ = ActorMain().create_env_and_agent()
-
-    # actor_eval = Actor(env_, agent_, num_episodes=1)
-    actor_sample = Actor(env_, agent_, num_steps=32)
-
-    models_pool = [
-        # (("cnn", 0), np.load("./easy_model/model_346346.npy", allow_pickle=True).item()),
-        # (("cnn", 1), np.load("./hard_model/model_80031.npy", allow_pickle=True).item()),
-        # (("cnn", 2), np.load("./hard_model/vs_hard_ai.npy", allow_pickle=True).item()),
-        (("builtin_ai", 0), {})
-    ]
-
-    model_id, weights = random.choice(models_pool)
-    actor_sample.reset_env(model_id, weights)
-
-    #model_id, weights = random.choice(models_pool[:3])
-    #actor_sample.reset_agent(model_id, weights)
-
-    # predict_generator = actor_eval.predict_generator()
-    sample_generator = actor_sample.sample_generator()
-
-    for cmd, msg in sample_generator:
-        logging.info(f"cmd: {cmd}")
-
-        if cmd == "sample_infos":
-            logging.info(f"msg:{msg}")
-            model_id, weights = random.choice(models_pool)
-            actor_sample.reset_env(model_id, weights)
-
-            #model_id, weights = random.choice(models_pool[:3])
-            #actor_sample.reset_agent(model_id, weights)
+        env = OpponentEnv(agents_pool={
+            "builtin_ai": feature_model.BuiltinAI(name="builtin_ai"),
+            "tamak": tamak_model.TamakAgent(model=tamak_model.FootballNet(name="tamak")),
+            "feature": IMPALAAgent(model=feature_model.FeatureModel("feature"))
+        })
+        return env, agents_pool
 
 
 

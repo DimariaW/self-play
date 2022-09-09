@@ -8,7 +8,7 @@ import rl.algorithm as alg
 import rl.league as lg
 import logging
 
-from tests.football.football_model import FeatureModel
+from tests.football.feature_model import FeatureModel
 
 from tests.football.config import USE_BZ2
 
@@ -40,7 +40,7 @@ class LearnerMain(core.LearnerMainBase):
         tensor_receiver = self.create_receiver(queue_receiver, to_tensor=False)
 
         model = FeatureModel().to(device)
-        model_weights = pickle.load(open("./tests/football/models/feature_380000.pickle", "rb"))
+        model_weights = pickle.load(open("./tests/football/model_weights/feature_380000.pickle", "rb"))
         model.set_weights(model_weights)
         logging.info("successfully loads weight from pretrained!")
 
@@ -70,14 +70,14 @@ class LeagueMain(core.ModelServerMainBase):
         """
         league = lg.ModelServer4RecordAndEval(queue_receiver, self.port, use_bz2=USE_BZ2,
                                               cache_weights_intervals=10000,
-                                              save_weights_dir=os.path.join(self.logger_file_dir, "models"),
+                                              save_weights_dir=os.path.join(self.logger_file_dir, "model_weights"),
                                               tensorboard_dir=os.path.join(self.logger_file_dir, "metrics"))
         """
         league = lg.League(queue_receiver,
                            self.port,
                            use_bz2=USE_BZ2,
                            cache_weights_intervals=30000,
-                           save_weights_dir=os.path.join(self.logger_file_dir, "models"),
+                           save_weights_dir=os.path.join(self.logger_file_dir, "model_weights"),
                            tensorboard_dir=os.path.join(self.logger_file_dir, "metrics"))
         league.run()
 

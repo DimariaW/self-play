@@ -19,9 +19,9 @@ import rl.utils as utils
 
 
 class PickledConnection:
-    def __init__(self, conn: socket.socket):
+    def __init__(self, conn: socket.socket, timeout=None):
         self.conn = conn
-        self.conn.settimeout(10)
+        self.conn.settimeout(timeout)
 
     def __del__(self):
         self.close()
@@ -99,12 +99,12 @@ def listen_socket_connections(n, port):
 def accept_socket_connection(sock):
     try:
         conn, _ = sock.accept()
-        return PickledConnection(conn)
+        return PickledConnection(conn, timeout=10)
     except socket.timeout:
         return None
 
 
-def accept_socket_connections(port, timeout=None, maxsize=1024):
+def accept_socket_connections(port, timeout=None, maxsize=9999):
     sock = open_socket_connection(port)
     sock.listen(maxsize)
     sock.settimeout(timeout)
