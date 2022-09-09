@@ -416,8 +416,8 @@ class ELOEvaluator:
 
     def log_elo_score(self):
         model_id_and_elo_score = [(model_id, elo_score) for model_id, elo_score in self.model_id_to_elo_score.items()]
-        sorted(model_id_and_elo_score, key=lambda x: -x[1])
-        logging.info(model_id_and_elo_score)
+        model_id_and_elo_score_sorted = sorted(model_id_and_elo_score, key=lambda x: -x[1])
+        logging.info(model_id_and_elo_score_sorted)
 
     def run(self):
         cmd2func = {
