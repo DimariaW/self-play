@@ -36,11 +36,11 @@ class MemoryMain(core.MemoryMainBase):
 class LearnerMain(core.LearnerMainBase):
     def main(self, queue_receiver: mp.Queue, queue_senders):
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        logging.info(f"the data will be in {device}")
+        logging.info(f"the model will be in {device}")
 
         tensor_receiver = self.create_receiver(queue_receiver, to_tensor=False)
 
-        model = feature_model.FeatureModel()
+        model = feature_model.FeatureModel().to(device)
         model_weights = pickle.load(open("./tests/football/weights/feature_870000.pickle", "rb"))
         model.set_weights(model_weights)
         logging.info("successfully loads weight from pretrained!")
