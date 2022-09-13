@@ -148,7 +148,9 @@ class Actor:
 
         meta_info = env_info
         meta_info.update(model_id=self.agent.model_id)
-        self.current_episode_info.update(meta_info=meta_info)
+        self.current_episode_info.update(meta_info=meta_info,
+                                         win=meta_info["win"],
+                                         model_index=meta_info["model_id"][1])
 
     def _update_process_bar(self):
         if self.process_bar is not None:

@@ -1053,6 +1053,76 @@ class OpponentEnv(gym.Wrapper):
 
         return feature, reward_infos, done, truncated, info
 
+
+class SingleOpponentEnv(gym.Wrapper):
+    def __init__(self, opponent_agent: Agent, opponent_preprocess_func=None, preprocess_func=None):
+        env = gfootball_env.create_environment(env_name="11_vs_11_kaggle",
+                                               render=False,
+                                               representation="raw",
+                                               rewards="scoring,checkpoints",
+                                               number_of_left_players_agent_controls=1,
+                                               number_of_right_players_agent_controls=1,
+                                               other_config_options={"action_set": "v2"}
+                                               )
+        super().__init__(env)
+        self.opponent_agent = opponent_agent
+        self.opponent_preprocess_func = opponent_preprocess_func
+        self.opponent_action_history = collections.deque(maxlen=8)
+        self.opponent_obs = None
+
+        self.preprocess_func = preprocess_func
+        self.action_history = collections.deque(maxlen=8)
+        self.scoring = 0
+
+    def reset(self):
+        obs = self.env.reset()
+        for _ in range(random.randint(0, 50)):
+            obs, reward, done, info = self.env.step([0, 0])
+
+        self.action_history.extend([0] * 8)
+        feature = self.preprocess_func(obs[0], self.action_history)
+
+        self.opponent_action_history.extend([0] * 8)
+        self.opponent_obs = self.opponent_preprocess_func(obs[1], self.opponent_action_history)
+
+        self.scoring = 0
+        return feature
+
+    def step(self, action):
+        self.action_history.append(action)
+
+        opponent_action = self.opponent_agent.predict(utils.batchify([self.opponent_obs], unsqueeze=0))["action"][0]
+        self.opponent_action_history.append(opponent_action)
+
+        obs, reward, done, info = self.env.step([action] + [opponent_action])
+
+        obs: list
+        reward: list
+        done: bool
+        info: dict
+
+        reward_infos = {"checkpoints": reward[0] - reward[1], "scoring": info["score_reward"]}
+
+        feature = self.preprocess_func(obs[0], self.action_history)
+        self.opponent_obs = self.opponent_preprocess_func(obs[1], self.opponent_action_history)
+
+        self.scoring += info["score_reward"]
+
+        truncated = False
+        if done:
+            if self.scoring == 0:
+                info["win"] = 0.5
+            elif self.scoring > 0:
+                info["win"] = 1
+            else:
+                info["win"] = 0
+
+            info["opponent_id"] = self.opponent_agent.model_id
+
+        return feature, reward_infos, done, truncated, info
+
+
+
 #%%
 
 
@@ -1286,6 +1356,9 @@ class FootballEnv:
 
 
 if __name__ == "__main__":
+    pass
+    """
+    
     from tests.football.models import feature_model, tamak_model
     from rl.agent import IMPALAAgent
     import tqdm
@@ -1306,7 +1379,7 @@ if __name__ == "__main__":
     }
 )
     # env.render()
-    """
+    
     timeit = tqdm.tqdm()
     model_id = ("builtin_ai", None)  # ("tamak", 1679)
     opponent_id = ("feature", 126)  # ("builtin_ai", None)

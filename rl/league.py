@@ -74,7 +74,7 @@ class ModelServer(ModelServerBase):
             self.cached_weights = weights
         else:
             self.cached_weights = bz2.compress(pickle.dumps(weights))
-        logging.debug(f"successfully update model to model id {self.cached_weights_index}")
+        logging.debug(f"successfully update model to index: {self.cached_weights_index}")
 
     def _update_once(self):
         if self.index.item() - self.cached_weights_index >= self.cache_weights_intervals:
@@ -82,7 +82,7 @@ class ModelServer(ModelServerBase):
 
     def run(self):
         response_function = {
-            "model": self._send_cached_weights
+            "model": self._run_model
         }
 
         threading.Thread(target=self._update, args=(), daemon=True).start()
@@ -92,14 +92,14 @@ class ModelServer(ModelServerBase):
             conn, (cmd, data) = self.actor_communicator.recv()
             response_function[cmd](conn, cmd, data)
 
-    def _send_cached_weights(self, conn: connection.PickledConnection, cmd: str, data: str):
+    def _run_model(self, conn: connection.PickledConnection, cmd: str, data: str):
         model_id = (self.model_name, self.cached_weights_index)
         weights = self.cached_weights
         self.actor_communicator.send(conn, (cmd, (model_id, weights)))
         logging.debug(f"receive (cmd: {cmd}, data: {data}), send (cmd: {cmd}, data: {model_id})")
 
 
-class ModelServer4RecordAndEval(ModelServer):
+class ModelServer4Evaluation(ModelServer):
     def __init__(self, queue_receiver: connection.Receiver,
                  port: int,
                  num_actors: int = None,
@@ -118,7 +118,7 @@ class ModelServer4RecordAndEval(ModelServer):
             os.makedirs(self.save_weights_dir, exist_ok=True)
 
         if tensorboard_dir is not None:
-            self.num_received_infos = defaultdict(int)
+            self.tag2steps = defaultdict(int)
             self.sw = tensorboardX.SummaryWriter(logdir=tensorboard_dir)
 
     def _save_cached_weights(self):
@@ -139,31 +139,11 @@ class ModelServer4RecordAndEval(ModelServer):
             self._update_cached_weights()
             self._save_cached_weights()
 
-    def _record_infos(self, conn: connection.PickledConnection, cmd: str, data: List[Dict[str, Any]]):
-        for info in data:
-            self._record_info(info, cmd)
-        self.actor_communicator.send(conn, (cmd, "successfully send infos"))
-        logging.debug(f"receive cmd: {cmd}, send (cmd: {cmd}, data: successfully send infos)")
-
-    def _record_info(self, info: Dict[str, Any], tag):
-        self.num_received_infos[tag] += 1
-        for key, value in info.items():
-            if key != "meta_info":
-                self.sw.add_scalar(tag=f"{tag}/{key}",
-                                   scalar_value=value,
-                                   global_step=self.num_received_infos[tag])
-            else:
-                _, model_index = value.get("agent_id", (None, None))
-                if model_index is not None:
-                    self.sw.add_scalar(tag=f"{tag}/model_index",
-                                       scalar_value=model_index,
-                                       global_step=self.num_received_infos[tag])
-
     def run(self):
         response_function = {
-            "model": self._send_cached_weights,
-            "sample_infos": self._record_infos,
-            "eval_infos": self._record_infos
+            "model": self._run_model,
+            "sample_infos": self._run_sample_infos,
+            "eval_infos": self._run_eval_infos
         }
         threading.Thread(target=self._update, args=(), daemon=True).start()
         self.actor_communicator.run()
@@ -172,8 +152,32 @@ class ModelServer4RecordAndEval(ModelServer):
             conn, (cmd, data) = self.actor_communicator.recv()
             response_function[cmd](conn, cmd, data)
 
+    def _run_sample_infos(self, conn: connection.PickledConnection, cmd: str, data: List[Dict[str, Any]]):
+        """assert cmd == "sample_infos
+        """
+        for info in data:
+            self._record_info(info, cmd)
+        self.actor_communicator.send(conn, (cmd, "successfully receive sample_infos by server"))
+        logging.debug(f"receive (cmd: {cmd}), send (cmd: {cmd}, data: successfully receive sample_infos by server)")
 
-class League(ModelServer4RecordAndEval):
+    def _run_eval_infos(self, conn: connection.PickledConnection, cmd: str, data: List[Dict[str, Any]]):
+        """assert cmd == "eval_infos"
+        """
+        for info in data:
+            self._record_info(info, cmd)
+        self.actor_communicator.send(conn, (cmd, "successfully receive eval_infos by server"))
+        logging.debug(f"receive (cmd: {cmd}), send (cmd: {cmd}, data: successfully receive eval_infos by server)")
+
+    def _record_info(self, info: Dict[str, Any], tag):
+        self.tag2steps[tag] += 1
+        for key, value in info.items():
+            if key != "meta_info":
+                self.sw.add_scalar(tag=f"{tag}/{key}",
+                                   scalar_value=value,
+                                   global_step=self.tag2steps[tag])
+
+
+class League(ModelServer4Evaluation):
     """
     sample opponent: cached weights and opponent pool
     eval moodel: cached weights
@@ -236,7 +240,7 @@ class League(ModelServer4RecordAndEval):
         create_response_functions: Dict[str, Callable] = {
             "model": self._send_model,
             "sample_infos": self._record_sample_infos,
-            "eval_infos": self._record_infos
+            "eval_infos": self._run_sample_infos
         }
         threading.Thread(target=self._update, args=(), daemon=True).start()
         self.actor_communicator.run()
@@ -260,7 +264,7 @@ class League(ModelServer4RecordAndEval):
         logging.debug(f"cmd: {cmd}, data: {data}")
 
         if data == "latest":
-            self._send_cached_weights(conn, cmd, data)
+            self._run_model(conn, cmd, data)
 
         elif data == "sample_opponent":
             """
@@ -268,7 +272,7 @@ class League(ModelServer4RecordAndEval):
             """
             ratio = np.random.rand()
             if ratio <= 0.5:
-                self._send_cached_weights(conn, cmd, data)
+                self._run_model(conn, cmd, data)
             elif ratio <= 0.55:
                 self._send_opponent(conn, cmd, data, ignore_priority=True)
             else:  # pfsp
@@ -307,9 +311,9 @@ class League(ModelServer4RecordAndEval):
                 win_rate = self.win_rate_to_opponents[opponent_id]
                 self.win_rate_to_opponents[opponent_id] += 0.001 * (info["meta_info"]["win"] - win_rate)
             # log to tensorboard
-        self._record_infos(conn, cmd, data)
+        self._run_sample_infos(conn, cmd, data)
 
-    def _record_infos(self, conn: connection.PickledConnection, cmd: str, data: List[Dict[str, Any]]):
+    def _run_sample_infos(self, conn: connection.PickledConnection, cmd: str, data: List[Dict[str, Any]]):
         for info in data:
             agent_name, agent_index = info["meta_info"]["agent_id"]
             opponent_name, opponent_index = info["meta_info"]["opponent_id"]

@@ -159,7 +159,7 @@ class QueueCommunicatorBase:
                 self.disconnect(conn)
             except BrokenPipeError:
                 self.disconnect(conn)
-            except socket.timeout:
+            except TimeoutError:
                 conn.close()
                 self.disconnect(conn)
                 continue
@@ -176,7 +176,7 @@ class QueueCommunicatorBase:
                 except EOFError:
                     self.disconnect(conn)
                     continue
-                except socket.timeout:
+                except TimeoutError:
                     conn.close()
                     self.disconnect(conn)
                     continue
