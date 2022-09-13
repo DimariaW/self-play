@@ -41,7 +41,7 @@ class LearnerMain(core.LearnerMainBase):
         tensor_receiver = self.create_receiver(queue_receiver, to_tensor=False)
 
         model = feature_model.FeatureModel()
-        model_weights = pickle.load(open("./tests/football/model_weights/feature_870000.pickle", "rb"))
+        model_weights = pickle.load(open("./tests/football/weights/feature_870000.pickle", "rb"))
         model.set_weights(model_weights)
         logging.info("successfully loads weight from pretrained!")
 

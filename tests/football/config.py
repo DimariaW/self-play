@@ -1,5 +1,5 @@
 
-NAME = "self_play_feature_checkpoints_impala"  # env_model_algorithm_other
+NAME = "vs_tamak_feature_checkpoints_impala"  # env_model_algorithm_other
 USE_BZ2 = True
 SELF_PLAY = False
 MEMORY_ADDRESS = ("10.127.7.14", 57779)
