@@ -1,5 +1,5 @@
-from tests.PPO.async_impala.config import CONFIG, MEMORY_ADDRESS, MODEL_SERVER_ADDRESS, LEAGUE_ADDRESS
-from tests.PPO.async_impala.learner import MemoryMain, LearnerMain, LeagueMain, ModelServerMain
+from tests.impala.config import CONFIG, MEMORY_ADDRESS, MODEL_SERVER_ADDRESS, LEAGUE_ADDRESS
+from tests.impala.learner import MemoryMain, LearnerMain, LeagueMain, ModelServerMain
 from rl.core import train_main
 import logging
 

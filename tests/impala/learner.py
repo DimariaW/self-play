@@ -8,14 +8,14 @@ import rl.algorithm as alg
 import rl.league as lg
 
 
-from tests.PPO.async_impala.config import CONFIG
+from tests.impala.config import CONFIG
 
 
 class MemoryMain(core.MemoryMainBase):
     def main(self, queue_sender: mp.Queue):
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-        if CONFIG["get_full_episodes"]:
+        if CONFIG["memory_type"] == "list":
             traj_list = mem.TrajListMP(maxlen=3000, queue_sender=queue_sender,
                                        batch_size=64, priority_replay=False,
                                        to_tensor=True, device=device,
@@ -51,6 +51,7 @@ class LearnerMain(core.LearnerMainBase):
                             vtrace_key=["reward"],
                             critic_update_method=CONFIG["critic_update_method"],
                             upgo_key=CONFIG["upgo_key"],
+                            sleep_seconds=CONFIG["sleep_seconds"]
                             )
         impala.run()
 

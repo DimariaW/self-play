@@ -1,5 +1,5 @@
 import rl.actor as actor
-from tests.PPO.async_impala.config import CONFIG
+from tests.impala.config import CONFIG
 from rl.agent import PPOAgent
 
 
