@@ -37,7 +37,7 @@ class Model(nn.Module):
 #%% a2c, impala, ppo model class, return value_infos and logits
 
 
-ReturnType = TypedDict("ReturnType", {"value_infos": Dict[str, torch.Tensor],
+ReturnType = TypedDict("ReturnType", {"value_info": Dict[str, torch.Tensor],
                                       "logits": torch.Tensor,
                                       "hidden": Optional[torch.Tensor]})
 

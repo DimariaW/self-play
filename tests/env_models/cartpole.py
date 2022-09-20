@@ -38,8 +38,12 @@ class OpponentEnv(gym.Wrapper):
         """
         self.opponent_id = None
 
-    def reset(self, model_id, model_weights):
-        self.opponent_id = model_id
+    def reset(self, model_id, opponent_id, opponent_weights):
+        """
+        opponent_env 默认存在一个agents_pool, 通过在reset的时候指定model_id和opponent_id, 告诉env里的opponent是谁
+        至于为什么要传入model_id, 因为要在env中做observation的预处理， 不同的agent对应不同的预处理方式
+        """
+        self.opponent_id = opponent_id
         return self.env.reset()
 
     def step(self, action) -> Tuple[Any, Dict[str, float], bool, bool, Dict[str, Any]]:

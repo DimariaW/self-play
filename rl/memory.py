@@ -1,11 +1,13 @@
 import logging
+import random
+
 import torch
 import queue
 import multiprocessing as mp
 import threading
 
 from typing import Union, List, Dict, Tuple
-from tensorboardX import SummaryWriter
+
 
 import rl.connection as connection
 import rl.utils as utils
@@ -13,7 +15,8 @@ import rl.utils as utils
 import pickle
 import bz2
 import numpy as np
-from collections import defaultdict
+from collections import deque
+
 
 EpisodeType = Tuple[int, List[Dict]]  # int 表示采用第几次的模型采样的数据, List[Dict] 表示采样的episode
 
@@ -39,32 +42,6 @@ class BatchMaker:
             episodes = utils.to_tensor(episodes, unsqueeze=None, device=self.device)
 
         return int(np.mean(model_indexes)), episodes
-
-"""
-def make_batch(episodes: List[EpisodeType], to_tensor=True) -> Tuple[int, Dict]:  # batch_size*time_step
-    model_indexes = [index for index, episode in episodes]
-    episodes = [episode for index, episode in episodes]
-
-    episodes = [utils.batchify(episode, unsqueeze=0) for episode in episodes]
-    episodes = utils.batchify(episodes, unsqueeze=0)
-
-    if to_tensor:
-        episodes = utils.to_tensor(episodes, unsqueeze=None, device=torch.device("cpu"))
-    return int(np.mean(model_indexes)), episodes
-    
-    
-
-def decompress_and_make_batch(episodes: List[CompressedEpisodeType], to_tensor=True) -> Tuple[int, Dict]:
-    model_indexes = [index for index, episode in episodes]
-    episodes = [episode for index, episode in episodes]
-
-    episodes = [utils.batchify(pickle.loads(bz2.decompress(episode)), unsqueeze=0) for episode in episodes]
-    episodes = utils.batchify(episodes, unsqueeze=0)
-
-    if to_tensor:
-        episodes = utils.to_tensor(episodes, unsqueeze=None, device=torch.device("cpu"))
-    return int(np.mean(model_indexes)), episodes
-"""
 
 
 class MemoryReplayBase:
@@ -219,6 +196,108 @@ class TrajQueueMP(TrajQueue):
                                                                name_prefix="batch_maker",
                                                                logger_file_dir=logger_file_dir,
                                                                file_level=logger_file_level)
+
+    def start(self):
+        self.batch_maker.start()
+
+
+#%%
+ChunkType = Tuple[int, bytes, bytes]
+
+
+class SelectBatcher:
+    def __init__(self,  to_tensor=False, device=torch.device("cpu")):
+        self.to_tensor = to_tensor
+        self.device = device
+
+    def __call__(self, compressed_chunks: List[ChunkType]) -> Tuple[int, Dict]:
+        indexes = []
+        chunks = []
+        for compressed_chunk in compressed_chunks:
+            index, chunk = self._make(compressed_chunk)
+            indexes.append(index)
+            chunks.append(chunk)
+
+        chunks = utils.batchify(chunks, unsqueeze=0)
+
+        if self.to_tensor:
+            chunks = utils.to_tensor(chunks, unsqueeze=None, device=self.device)
+
+        return int(np.mean(indexes)), chunks
+
+    @staticmethod
+    def _make(compressed_chunk: ChunkType) -> Tuple[int, Dict]:
+        index, chunk1, chunk2 = compressed_chunk
+        chunk1 = pickle.loads(bz2.decompress(chunk1))
+        chunk_length = len(chunk1)
+
+        chunk = []
+        chunk.extend(chunk1)
+        chunk.extend(pickle.loads(bz2.decompress(chunk2)))
+
+        start = random.randrange(0, len(chunk) - chunk_length)
+        chunk = chunk[start: start+chunk_length+1]
+        chunk[-1]["only_bootstrap"] = True
+
+        chunk = utils.batchify(chunk, unsqueeze=0)
+
+        return index, chunk
+
+
+class TrajListMP(MemoryReplayBase):
+    def __init__(self,
+                 maxlen: int,
+                 queue_sender: mp.Queue,
+                 batch_size: int = 64,
+                 priority_replay: bool = False,
+                 to_tensor: bool = True,
+                 device=torch.device("cpu"),
+                 # batch_maker args
+                 num_batch_maker: int = 2,
+                 logger_file_dir: str = None,
+                 logger_file_level=logging.DEBUG
+                 ):
+        super().__init__(queue_sender, True, to_tensor, device)
+        self.episodes = deque(maxlen=maxlen)
+        self.batch_size = batch_size
+        self.priority_replay = priority_replay
+        self.num_cached = 0
+
+        batch_maker = SelectBatcher(self.to_tensor, self.device)
+        self.batch_maker = connection.MultiProcessJobExecutors(batch_maker,
+                                                               send_generator=self.send_raw_batch(),
+                                                               num=num_batch_maker,
+                                                               queue_receiver=self.queue_sender,
+                                                               name_prefix="batch_maker",
+                                                               logger_file_dir=logger_file_dir,
+                                                               file_level=logger_file_level)
+
+    def cache(self, episodes: List[Tuple[int, List[bytes]]]):
+        self.episodes.extend(episodes)
+        self.num_cached += len(episodes)
+        logging.debug(f"total cached episodes is {self.num_cached}")
+
+    def send_raw_batch(self):
+        while True:
+            yield [self.send_a_sample() for _ in range(self.batch_size)]
+
+    def send_a_sample(self):
+        while len(self.episodes) == 0:
+            pass
+
+        if self.priority_replay:
+            while True:
+                ep_idx = random.randrange(0, len(self.episodes))
+                accept_rate = 1 - (len(self.episodes) - 1 - ep_idx) / self.episodes.maxlen
+                if random.random() < accept_rate:
+                    index, ep = self.episodes[ep_idx]
+                    st = random.randrange(0, len(ep) - 1)  # change start turn by sequence length
+                    return index, ep[st], ep[st+1]
+        else:
+            ep_idx = random.randrange(0, len(self.episodes))
+            index, ep = self.episodes[ep_idx]
+            st = random.randrange(0, len(ep) - 1)  # change start turn by sequence length
+            return index, ep[st], ep[st + 1]
 
     def start(self):
         self.batch_maker.start()

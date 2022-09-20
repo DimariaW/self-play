@@ -1,8 +1,10 @@
+import time
+
 import torch
 import logging
 import multiprocessing as mp
 from tensorboardX import SummaryWriter
-from typing import List, Union, Tuple, Dict
+from typing import List, Union, Tuple, Dict, Literal
 
 from rl.model import Model, ModelValueLogit
 from rl.connection import Receiver, send_with_stop_flag
@@ -60,21 +62,39 @@ class Algorithm:
             done: torch.Tensor, bootstrap_mask: torch.Tensor,
             gamma: float, lbd: float):  # tensor shape: B*T
         """
-        bootstrap_mask = 0, 表示此value仅仅被用于bootstrap, 对此value的value估计保持不变并且adv为0, 且done必须等于True.
+        :param value: shape(batch_size, time_length, ...)
+        :param reward: shape(batch_size, time_length, ...), the same as value
+        :param done: shape(batch_size, time_length)
+        :param bootstrap_mask: shape(batch_size, time_length), 0 represent masked
+        :param gamma: discount factor
+        :param lbd: td-lambda param.
+
+        value, reward have the same shape, the first two dimension is batch_size, time_length.
+        done, bootstrap_mask shape is batch_size, time_length
+        bootstrap_mask = 0, 表示此value仅仅被用于bootstrap, reward无意义， done为True。 对此value的value估计保持不变并且adv为0。
+        at the  last time step, the done must be true.
         """
-        td_error = reward + gamma * (1. - done) * torch.concat([value[:, 1:], value[:, -1:]], dim=-1) - value
+        batch_size, time_length = value.shape[:2]
+        other_shape = value.shape[2:]
+        device = value.device
+
+        done = done.view(batch_size, time_length, * ([1] * len(other_shape)))
+        bootstrap_mask = bootstrap_mask.view(batch_size, time_length, *([1] * len(other_shape)))
+
+        bootstrap_value = torch.zeros(batch_size, 1, *other_shape, device=device)
+        td_error = reward + gamma * (1. - done) * torch.concat([value[:, 1:], bootstrap_value], dim=1) - value
         td_error = td_error * bootstrap_mask
 
         advantage = []
         next_adv = 0
 
-        for i in range(value.shape[1] - 1, -1, -1):
+        for i in range(time_length - 1, -1, -1):
             curr_td_error = td_error[:, i]
             curr_done = done[:, i]
             advantage.insert(0, curr_td_error + gamma * (1. - curr_done) * lbd * next_adv)
             next_adv = advantage[0]
 
-        advantage = torch.stack(advantage, dim=-1)
+        advantage = torch.stack(advantage, dim=1)
         return advantage, advantage + value
 
     @staticmethod
@@ -85,11 +105,16 @@ class Algorithm:
         """
         the other version of gae, the speed is slower than the first one, see tests files.
         """
+        batch_size, time_length = value.shape[:2]
+        other_shape = value.shape[2:]
+        done = done.view(batch_size, time_length, *([1] * len(other_shape)))
+        bootstrap_mask = bootstrap_mask.view(batch_size, time_length, *([1] * len(other_shape)))
+
         advantage = []
         next_adv = 0
         next_value = 0
 
-        for i in range(value.shape[1] - 1, -1, -1):
+        for i in range(time_length - 1, -1, -1):
             curr_reward = reward[:, i]
             curr_value = value[:, i]
             curr_done = done[:, i]
@@ -102,7 +127,7 @@ class Algorithm:
             next_adv = advantage[0]
             next_value = curr_value
 
-        advantage = torch.stack(advantage, dim=-1)  # shape(B, T)
+        advantage = torch.stack(advantage, dim=1)  # shape(B, T)
         return advantage, advantage + value
 
     @staticmethod
@@ -113,11 +138,16 @@ class Algorithm:
         """
         the third version of gae, shed light to the computation of upgo-lambda
         """
+        batch_size, time_length = value.shape[:2]
+        other_shape = value.shape[2:]
+        done = done.view(batch_size, time_length, *([1] * len(other_shape)))
+        bootstrap_mask = bootstrap_mask.view(batch_size, time_length, *([1] * len(other_shape)))
+
         td_value = []
         next_value = 0
         next_td_value = 0
 
-        for i in range(value.shape[1] - 1, -1, -1):
+        for i in range(time_length - 1, -1, -1):
             curr_reward = reward[:, i]
             curr_done = done[:, i]
             curr_bootstrap_mask = bootstrap_mask[:, i]
@@ -131,7 +161,7 @@ class Algorithm:
             next_value = curr_value
             next_td_value = td_value[0]
 
-        td_value = torch.stack(td_value, dim=-1)
+        td_value = torch.stack(td_value, dim=1)
 
         return td_value - value, td_value
 
@@ -140,14 +170,34 @@ class Algorithm:
     def vtrace(value: torch.Tensor, reward: torch.Tensor,
                done: torch.Tensor, bootstrap_mask: torch.Tensor,
                gamma: float, lbd: float, rho, c):  # tensor(B, T)
+        """
+        value, reward shape: B, T, ...  # for multi-agent
+        done, bootstrap_mask shape: B, T,
+        rho, c shape: B, T, ..., ...    # for multi-action head
+        最后一个时间维度的done一定为True, bootstrap也为True
+        """
+        # 1. get shape info
+        batch_size, time_step = done.shape
+        agents_shape = value.shape[2:]
+        actions_shape = rho.shape[2 + len(agents_shape):]
 
-        td_error = reward + gamma * (1. - done) * torch.concat([value[:, 1:], value[:, -1:]], dim=-1) - value
+        # 2. expand
+        value = value.view(batch_size, time_step, *agents_shape, *([1]*len(actions_shape)))
+        reward = reward.view(batch_size, time_step, *agents_shape, *([1] * len(actions_shape)))
+        done = done.view(batch_size, time_step, *([1]*(len(agents_shape) + len(actions_shape))))
+        bootstrap_mask = bootstrap_mask.view(batch_size, time_step, *([1]*(len(agents_shape) + len(actions_shape))))
+
+        # 3. create bootstrap
+        bootstrap_value = torch.zeros(batch_size, 1, *agents_shape, *([1]*len(actions_shape)), device=value.device)
+
+        # 4. cal td_error
+        td_error = reward + gamma * (1. - done) * torch.concat([value[:, 1:], bootstrap_value], dim=1) - value
         td_error = rho * bootstrap_mask * td_error  # bootstrap 的td_error为0
 
+        # 5. cal advantage
         advantage = []
         next_adv = 0
-
-        for i in range(value.shape[1] - 1, -1, -1):
+        for i in range(time_step-1, -1, -1):
             curr_td_error = td_error[:, i]
             curr_done = done[:, i]
             curr_c = c[:, i]
@@ -155,44 +205,11 @@ class Algorithm:
             advantage.insert(0, curr_td_error + gamma * (1. - curr_done) * lbd * curr_c * next_adv)
             next_adv = advantage[0]
 
-        advantage = torch.stack(advantage, dim=-1)
+        advantage = torch.stack(advantage, dim=1)
         vtrace_value = advantage + value
 
         advantage = reward + \
-            gamma * (1. - done) * torch.concat([vtrace_value[:, 1:], vtrace_value[:, -1:]], dim=-1) - value
-        advantage = advantage * bootstrap_mask
-
-        return advantage, vtrace_value
-
-    @staticmethod
-    @torch.no_grad()
-    def vtrace_multi_action_head(value: torch.Tensor, reward: torch.Tensor,
-                                 done: torch.Tensor, bootstrap_mask:torch.Tensor,
-                                 gamma: float, lbd: float,
-                                 rho: torch.Tensor, c: torch.Tensor):  # rho, c shape (B, T, N)
-        value =  value.unsqueeze(-1)
-        reward = reward.unsqueeze(-1)
-        done = done.unsqueeze(-1)
-        bootstrap_mask = bootstrap_mask.unsqueeze(-1)
-
-        td_error = reward + gamma * (1. - done) * torch.concat([value[:, 1:], value[:, -1:]], dim=1) - value
-        td_error = rho * bootstrap_mask * td_error  # B*T*N
-
-        advantage = []
-        next_adv = 0
-
-        for i in range(value.shape[1] - 1, -1, -1):
-            curr_td_error = td_error[:, i]  # B*N
-            curr_done = done[:, i]  # B*1
-            curr_c = c[:, i]  # B*N
-            advantage.insert(0, curr_td_error + gamma * (1. - curr_done) * lbd * curr_c * next_adv) # B*N
-            next_adv = advantage[0]
-
-        advantage = torch.stack(advantage, dim=1)  # B*T*N
-        vtrace_value = advantage + value
-
-        advantage = reward + \
-                    gamma * (1. - done) * torch.concat([vtrace_value[:, 1:], vtrace_value[:, -1:]], dim=1) - value
+            gamma * (1. - done) * torch.concat([vtrace_value[:, 1:], vtrace_value[:, -1:]], dim=1) - value
         advantage = advantage * bootstrap_mask
 
         return advantage, vtrace_value
@@ -202,6 +219,12 @@ class Algorithm:
     def upgo(value: torch.Tensor, reward: torch.Tensor,
              done: torch.Tensor, bootstrap_mask: torch.Tensor,
              gamma: float, lbd: float):
+
+        batch_size, time_length = value.shape[:2]
+        other_shape = value.shape[2:]
+
+        done = done.view(batch_size, time_length, *([1] * len(other_shape)))
+        bootstrap_mask = bootstrap_mask.view(batch_size, time_length, *([1] * len(other_shape)))
 
         target_value = []
         next_value = torch.tensor(0, device=value.device)
@@ -220,7 +243,7 @@ class Algorithm:
             next_value = curr_value
             next_target = target_value[0]
 
-        target_value = torch.stack(target_value, dim=-1)
+        target_value = torch.stack(target_value, dim=1)
 
         return target_value - value, target_value
 
@@ -248,8 +271,8 @@ class ActorCriticBase(Algorithm):
         self.ef = ef
         # 3. loss function and optimizer
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr, eps=1e-5)  # trick increase eps
-        # self.critic_loss_fn = torch.nn.MSELoss()
-        self.critic_loss_fn = torch.nn.SmoothL1Loss(reduction="sum")  # trick replace MSE loss
+        self.critic_loss_fn = torch.nn.MSELoss(reduction="sum")
+        # self.critic_loss_fn = torch.nn.SmoothL1Loss(reduction="sum")  # trick replace MSE loss
         # 5. tensorboard
         if tensorboard_dir is not None:
             self.sw = SummaryWriter(logdir=tensorboard_dir)
@@ -285,8 +308,18 @@ class ActorCriticBase(Algorithm):
 
 class IMPALA(ActorCriticBase):
     """
-    多reward, 单action
-    reward 结构应为 {”reward1", "reward2", "reward3"}
+    reward_info 结构应为 {”reward1": float, "reward2": float, "reward3": float}
+    value_info 结构应为 {”reward1": float, "reward2": float, "reward3": float}
+
+    critic_loss 三种计算方式：
+    1. actor端计算gae 得到value_target_info  learner端认为value_target_info为ground truth, 用来和value_info一起计算loss
+    2. actor端计算gae 得到value_target_info, learner仅有value_target_info的最后一个时间步作为bootstrap
+    3. 用value_info.detach() 计算gae
+
+    vtrace_key: 用value_info 和 reward计算 adv
+    upgo_key: 用value_info 和 reward计算adv
+
+    注意样本最后一个时间维度的done一定为True
     """
     def __init__(self,
                  model: ModelValueLogit,
@@ -294,26 +327,30 @@ class IMPALA(ActorCriticBase):
                  tensor_receiver: Receiver,
                  lr: float = 2e-3, gamma: float = 0.99, lbd: float = 0.98, vf: float = 0.5, ef: float = 1e-3,
                  tensorboard_dir: str = None,
+                 # multi-reward
+                 critic_key: Union[List[str], Tuple[str]] = (),
+                 critic_update_method: Literal["behavior", "behavior_bootstrap", "target"] = "target",
                  vtrace_key: Union[List[str], Tuple[str]] = (),
-                 only_critic: Union[List[str], Tuple[str]] = (),
                  upgo_key: Union[List[str], Tuple[str]] = ()
                  ):
 
         super().__init__(model, queue_senders, tensor_receiver,
                          lr, gamma, lbd, vf, ef, tensorboard_dir)
 
-        assert set(only_critic).issubset(set(vtrace_key))
-        self.upgo_key = upgo_key
+        assert set(critic_key).issuperset(set(vtrace_key))
+        assert set(critic_key).issuperset(set(upgo_key))
+        self.critic_key = critic_key
+        self.critic_update_method = critic_update_method
         self.vtrace_key = vtrace_key
-        self.only_critic = only_critic
+        self.upgo_key = upgo_key
 
     def learn(self):
         self.model.train()
         mean_behavior_model_index, batch = self.tensor_receiver.recv()
 
-        obs = batch["observation"]  # shape(B, T)
-        behavior_log_prob = batch['behavior_log_prob']  # shape(B, T) or shape(B, T, N)
-        action = batch["action"]  # shape(B, T) or shape(B, T, N)
+        obs = batch["observation"]  # shape(B, T, ...)
+        behavior_log_prob = batch['behavior_log_prob']  # shape(B, T, ...) or shape(B, T, ..., N)
+        action = batch["action"]  # shape(B, T, ...) or shape(B, T, ..., N)
         reward_info: Dict[str, torch.Tensor] = batch["reward_info"]
         done = batch["done"]  # shape(B, T)
         bootstrap_mask = 1. - batch["only_bootstrap"]  # 0表示被mask掉, shape(B, T)
@@ -321,16 +358,17 @@ class IMPALA(ActorCriticBase):
         info = self.model(obs)  # shape: B*T, B*T*N*act_dim | B*T*act_dim
         value_info = info["value_info"]
         action_logits = info["logits"]
-        # get behavior log prob
+
+        # get log prob
         action_log_prob = torch.log_softmax(action_logits, dim=-1)
         action_log_prob = action_log_prob.gather(-1, action.unsqueeze(-1)).squeeze(-1)  # B*T*N | B*T
         log_rho = action_log_prob.detach() - behavior_log_prob
         rho = torch.exp(log_rho)
+
         # for debugging
-        if len(action_log_prob.shape) == 3:
-            mean_rho = (torch.sum(rho * bootstrap_mask.unsqueeze(-1)) / torch.sum(bootstrap_mask)).item()
-        else:
-            mean_rho = (torch.sum(rho * bootstrap_mask) / torch.sum(bootstrap_mask)).item()
+        bs_mask_unsqueezed = bootstrap_mask.view(*rho.shape[:2], *([1]*len(rho.shape[2:])))
+        mean_rho = (torch.sum(rho * bs_mask_unsqueezed) / torch.sum(bs_mask_unsqueezed)).item()
+
         # vtrace clipped rho
         clipped_rho = torch.clamp(rho, 0, 1)  # clip_rho_threshold := 1)  rho shape: B*T*N, B*T
         clipped_c = torch.clamp(rho, 0, 1)  # clip_c_threshold := 1)  c shape: B*T*N, B*T
@@ -339,58 +377,61 @@ class IMPALA(ActorCriticBase):
         critic_losses = {}
         actor_loss = 0
         critic_loss = 0
-        action_head_mask = 1. - obs["illegal_action_head"] \
-            if isinstance(obs, dict) and "illegal_action_head" in obs \
-            else 1.
 
-        for key in self.vtrace_key:
-            value = value_info[key]
-            value_nograd = value.detach()
-            reward = reward_info[key]
+        action_head_mask = 1. - batch["illegal_action_head"] if "illegal_action_head" in batch else 1.
 
-            gae_adv, gae_value = self.gae(value_nograd, reward, done, bootstrap_mask, self.gamma, self.lbd)
-            critic_loss_local = self.critic_loss_fn(value, gae_value)
-            critic_loss += critic_loss_local
-            critic_losses[key + "_critic_loss"] = critic_loss_local.item()
-            # vtrace_adv, vtrace_value = self.vtrace(value_nograd, reward, done, bootstrap_mask, self.gamma, self.lbd,
-            #                                      clipped_rho, clipped_c)
+        if self.critic_update_method == "behavior":
+            """
+            batch 中存在真value_target值
+            """
+            value_target_info = batch["value_target_info"]
+            for key in self.critic_key:
+                value = value_info[key]
+                value_target = value_target_info[key]
+                critic_loss_local = self.critic_loss_fn(value*bootstrap_mask, value_target*bootstrap_mask)
+                critic_loss += critic_loss_local
+                critic_losses[key + "_critic_loss"] = critic_loss_local.item()
 
-            # logging.debug(f" {key} adv is {torch.mean(vtrace_adv)}")
-            # logging.debug(f" {key} value is {torch.mean(vtrace_value)}")
-            # critic_loss_local = self.critic_loss_fn(value, vtrace_value)
-            # critic_loss += critic_loss_local
-            # critic_losses[key + "_critic_loss"] = critic_loss_local.item()
-            if key not in self.only_critic:
-                if len(action_log_prob.shape) == 3:  # shape(B, T, N)
-                    vtrace_adv, vtrace_value = self.vtrace_multi_action_head(value_nograd, reward, done, bootstrap_mask,
-                                                                             self.gamma, self.lbd,
-                                                                             clipped_rho, clipped_c)
+        elif self.critic_update_method == "behavior_bootstrap":
+            value_target_info = batch["value_target_info"]
+            for key in self.critic_key:
+                value = value_info[key]
+                value_target = value_target_info[key]
+                value_nograd = value.detach()*bootstrap_mask + value_target*(1.-bootstrap_mask)
+                reward = reward_info[key]
+                gae_adv, gae_value = self.gae(value_nograd, reward, done, bootstrap_mask, self.gamma, self.lbd)
+                critic_loss_local = self.critic_loss_fn(value*bootstrap_mask, gae_value*bootstrap_mask)
+                critic_loss += critic_loss_local
+                critic_losses[key + "_critic_loss"] = critic_loss_local.item()
 
-                else:
-                    vtrace_adv, vtrace_value = self.vtrace(value_nograd, reward, done, bootstrap_mask,
-                                                           self.gamma, self.lbd, clipped_rho, clipped_c)
-
-                actor_loss_local = torch.sum(-action_head_mask * action_log_prob * clipped_rho * vtrace_adv)
-                actor_loss += actor_loss_local
-                actor_losses[key + "_actor_loss"] = actor_loss_local.item()
-
-        if self.upgo_key is not None:
-            for key in self.upgo_key:
+        elif self.critic_update_method == "target":
+            for key in self.critic_key:
                 value = value_info[key]
                 value_nograd = value.detach()
                 reward = reward_info[key]
+                gae_adv, gae_value = self.gae(value_nograd, reward, done, bootstrap_mask, self.gamma, self.lbd)
+                critic_loss_local = self.critic_loss_fn(value*bootstrap_mask, gae_value*bootstrap_mask)
+                critic_loss += critic_loss_local
+                critic_losses[key + "_critic_loss"] = critic_loss_local.item()
 
-                upgo_adv, upgo_value = self.upgo(value_nograd, reward, done, bootstrap_mask, self.gamma, self.lbd)
-                # logging.debug(f" upgo_adv is {torch.mean(upgo_adv)}")
-                # logging.debug(f" upgo_value is {torch.mean(upgo_value)}")
-                if len(action_log_prob.shape) == 3:
-                    actor_loss_local = torch.sum(
-                        -action_head_mask * action_log_prob * clipped_rho * upgo_adv.unsqueeze(-1))
-                else:
-                    actor_loss_local = torch.sum(
-                        -action_head_mask * action_log_prob * clipped_rho * upgo_adv)
-                actor_loss += actor_loss_local
-                actor_losses[key+"_upgo"] = actor_loss_local.item()
+        for key in self.vtrace_key:
+            value_nograd = value_info[key].detach()
+            reward = reward_info[key]
+            vtrace_adv, vtrace_value = self.vtrace(value_nograd, reward, done, bootstrap_mask, self.gamma, self.lbd, clipped_rho, clipped_c)
+
+            actor_loss_local = torch.sum(-action_head_mask * action_log_prob * clipped_rho * vtrace_adv)
+            actor_loss += actor_loss_local
+            actor_losses[key + "_actor_loss"] = actor_loss_local.item()
+
+        for key in self.upgo_key:
+            value_nograd = value_info[key].detach()
+            reward = reward_info[key]
+
+            upgo_adv, upgo_value = self.upgo(value_nograd, reward, done, bootstrap_mask, self.gamma, self.lbd)
+
+            actor_loss_local = torch.sum(-action_head_mask * action_log_prob * clipped_rho * upgo_adv)
+            actor_loss += actor_loss_local
+            actor_losses[key+"_upgo"] = actor_loss_local.item()
 
         entropy = torch.sum(action_head_mask * torch.distributions.Categorical(logits=action_logits).entropy())
 
@@ -405,58 +446,3 @@ class IMPALA(ActorCriticBase):
         # when tensor in cuda device, we must delete the variable manually !
         del batch
         return train_info
-
-
-"""
-    def learn(self):
-        self.model.train()
-        _, batch = self.tensor_receiver.recv()
-
-        obs = batch["observation"]  # shape(B, T)
-        action = batch["action"]
-        reward_infos: Dict[str, torch.Tensor] = batch["reward_infos"]
-        done = batch["done"]
-
-        value_infos, logit = self.model(obs)  # shape(B, T), shape(B, T, action_dim)
-
-        entropy = torch.sum(torch.distributions.Categorical(logits=logit).entropy())
-
-        action_log_probs = torch.log_softmax(logit, dim=-1)
-        action_log_prob = torch.gather(action_log_probs, dim=-1, index=action.unsqueeze(-1)).squeeze(-1)  # shape(B*T)
-
-        actor_losses = {}
-        critic_losses = {}
-        actor_loss = 0
-        critic_loss = 0
-
-        for key in value_infos.keys():
-            value = value_infos[key]
-            value_nograd = value.detach()
-            reward = reward_infos[key]
-
-            adv, value_estimate = self.a2c_v1(value_nograd[:, :-1], reward[:, :-1],
-                                              self.gamma, self.lbd, done[:, :-1], value_nograd[:, -1])
-            # trick normalize adv mini-batch
-            adv = (adv - torch.mean(adv)) / (torch.std(adv) + 1e-5)
-
-            actor_loss_local = torch.sum(-action_log_prob[:, :-1] * adv)
-            critic_loss_local = self.critic_loss_fn(value[:, :-1], value_estimate)
-
-            actor_loss += actor_loss_local
-            critic_loss += critic_loss_local
-
-            actor_losses[key+"_actor_loss"] = actor_loss_local.item()
-            critic_losses[key+"_critic_loss"] = critic_loss_local.item()
-
-        self.gradient_clip_and_optimize(self.optimizer,
-                                        actor_loss + self.vf * critic_loss - self.ef * entropy,
-                                        self.model.parameters(),
-                                        max_norm=40.0)
-        train_infos = {}
-        train_infos.update(**actor_losses, **critic_losses, entropy=entropy.item())
-        # when tensor in cuda device, we must delete the variable manually !
-        del batch
-
-        return train_infos
-
-"""

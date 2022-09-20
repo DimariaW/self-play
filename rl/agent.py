@@ -119,15 +119,28 @@ class PPOAgent(A2CAgent):
     def sample(self, observation: ObsType) -> Dict:
         self.model.eval()
         state = utils.to_tensor(observation, device=self.device)
-        values, logits = self.model(state)
-        for key, value in values.items():
-            values[key] = value.cpu().numpy()
+        infos = self.model(state)
+        # get key and values
+        value_infos = infos["value_info"]
+        logits = infos["logits"]
+        hidden = infos.get("hidden", None)
+
+        for key, value in value_infos.items():
+            value_infos[key] = value.cpu().numpy()
         action_idx = torch.distributions.Categorical(logits=logits).sample()
         log_prob = torch.log_softmax(logits, dim=-1)
         behavior_log_prob = torch.gather(log_prob, dim=-1, index=action_idx.unsqueeze(-1)).squeeze(-1)
-        return {"values": values,
-                "action": action_idx.cpu().numpy(),
-                "behavior_log_prob": behavior_log_prob.cpu().numpy()}
+        if hidden is not None:
+            hidden = utils.to_numpy(hidden)
+            return {"value_info": value_infos,
+                    "action": action_idx.cpu().numpy(),
+                    "behavior_log_prob": behavior_log_prob.cpu().numpy(),
+                    "hidden": hidden}
+        else:
+            return {"value_info": value_infos,
+                    "action": action_idx.cpu().numpy(),
+                    "behavior_log_prob": behavior_log_prob.cpu().numpy()}
+
 
 
 
