@@ -253,8 +253,9 @@ class ActorCriticBase(Algorithm):
                  model: ModelValueLogit,
                  queue_senders: List[mp.Queue],
                  tensor_receiver: Receiver,
-                 lr: float = 2e-3, gamma: float = 0.99, lbd: float = 0.98, vf: float = 0.5, ef: float = 1e-3,
-                 tensorboard_dir: str = None):
+                 lr: float, gamma: float, lbd: float, vf: float, ef: float,
+                 tensorboard_dir: str,
+                 sleep_seconds: float):
         super().__init__()
         self.model = model
         # owing to some bug in pytorch 1.12, this statement is not correct, do not need it.
@@ -273,9 +274,11 @@ class ActorCriticBase(Algorithm):
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr, eps=1e-5)  # trick increase eps
         self.critic_loss_fn = torch.nn.MSELoss(reduction="sum")
         # self.critic_loss_fn = torch.nn.SmoothL1Loss(reduction="sum")  # trick replace MSE loss
-        # 5. tensorboard
+        # 4. tensorboard
         if tensorboard_dir is not None:
             self.sw = SummaryWriter(logdir=tensorboard_dir)
+        # 5. sleep_seconds
+        self.sleep_seconds = sleep_seconds
 
     def set_weights(self, weights, index=None):
         self.model.set_weights(weights)
@@ -305,6 +308,9 @@ class ActorCriticBase(Algorithm):
                     for key, value in learn_info.items():
                         self.sw.add_scalar(f"{tag}/{key}", value, index)
 
+            # to sleep a few seconds
+            time.sleep(self.sleep_seconds)
+
 
 class IMPALA(ActorCriticBase):
     """
@@ -327,6 +333,7 @@ class IMPALA(ActorCriticBase):
                  tensor_receiver: Receiver,
                  lr: float = 2e-3, gamma: float = 0.99, lbd: float = 0.98, vf: float = 0.5, ef: float = 1e-3,
                  tensorboard_dir: str = None,
+                 sleep_seconds: float = None,
                  # multi-reward
                  critic_key: Union[List[str], Tuple[str]] = (),
                  critic_update_method: Literal["behavior", "behavior_bootstrap", "target"] = "target",
@@ -335,7 +342,7 @@ class IMPALA(ActorCriticBase):
                  ):
 
         super().__init__(model, queue_senders, tensor_receiver,
-                         lr, gamma, lbd, vf, ef, tensorboard_dir)
+                         lr, gamma, lbd, vf, ef, tensorboard_dir, sleep_seconds)
 
         assert set(critic_key).issuperset(set(vtrace_key))
         assert set(critic_key).issuperset(set(upgo_key))

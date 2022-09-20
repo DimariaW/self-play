@@ -304,6 +304,7 @@ class Actor:
                 yield cmd, data
 
     @staticmethod
+    # TODO: remove in future version.
     def _gae(value: np.ndarray, reward: np.ndarray,
              done: np.ndarray, bootstrap_mask: np.ndarray,
              gamma: float, lbd: float):  # array shape(T*B),  done shape(T), bootstrap_mask shape(T)
@@ -329,6 +330,7 @@ class Actor:
         return advantage, advantage + value
 
     @staticmethod
+    # TODO: remove in future version.
     def get_cal_gae_function(gamma_infos: Union[Dict, float] = 0.99, lbd_infos: Union[Dict, float] = 1):
         def cal_gea_from_episodes(episodes):
             value_infos = utils.batchify([episode["value_info"] for episode in episodes], unsqueeze=0)
