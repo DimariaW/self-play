@@ -11,6 +11,7 @@ import rl.utils as utils
 #%%
 
 
+# for readable
 class Action(enum.IntEnum):
     Idle = 0
     Left = 1
@@ -75,6 +76,9 @@ action_to_sticky_index = {
 
 
 class Observation2Feature:
+    """
+    namespace of preprocess function for model_name = "feature"
+    """
     @staticmethod
     def _preprocess_obs(obs):
         mode = obs['game_mode']
@@ -390,6 +394,9 @@ KICK_ACTIONS = {
 
 
 class TamakEriFever:
+    """
+    namespace of preprocess function for model_name = "tamak"
+    """
     @staticmethod
     def _preprocess_obs(obs):
         mode = obs['game_mode']
@@ -888,10 +895,17 @@ class TamakEriFever:
 
 
 def builtin_ai_observation_to_feature(obs, action_history):
+    """
+    preprocess function of builtin_ai
+    """
     return obs
+#%%
 
 
-class FeatureEnv(gym.Wrapper):
+class FeatureEnvDeprecated(gym.Wrapper):
+    """
+    deprecated, since it may customized reward function. however, this type of reward is not as good as checkpoints
+    """
     def __init__(self, reward_type: Literal["checkpoints", "customized", "scoring"] = "checkpoints"):
         env = gfootball_env.create_environment(env_name="11_vs_11_kaggle",
                                                render=False,
@@ -962,6 +976,7 @@ class FeatureEnv(gym.Wrapper):
                 self.pre_ball_owned_team = obs["ball_owned_team"]
 
         return feature, reward_infos, done, truncated, info
+#%%
 
 
 class OpponentEnv(gym.Wrapper):
@@ -1120,9 +1135,6 @@ class SingleOpponentEnv(gym.Wrapper):
             info["opponent_id"] = self.opponent_agent.model_id
 
         return feature, reward_infos, done, truncated, info
-
-
-
 #%%
 
 
@@ -1131,7 +1143,7 @@ class FeatureEnv4MultiAgent(gym.Wrapper):
         env = gfootball_env.create_environment(env_name="academy_3_vs_1_with_keeper",
                                                render=False,
                                                representation="raw",
-                                               rewards="scoring",
+                                               rewards="scoring, checkpoints",
                                                number_of_left_players_agent_controls=num_left,
                                                number_of_right_players_agent_controls=num_right)
         super().__init__(env)
@@ -1159,6 +1171,7 @@ class FeatureEnv4MultiAgent(gym.Wrapper):
                for observation, action_history in zip(obs, self.action_histories)]
 
         return utils.batchify(obs, unsqueeze=0), reward_infos, done, truncated, info
+
 
 """
 class SMMActionMaskWrapper(gym.Wrapper):

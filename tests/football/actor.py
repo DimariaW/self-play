@@ -4,12 +4,15 @@ import tests.football.config as cfg
 
 from rl.agent import IMPALAAgent
 import rl.core as core
-
+import rl.actor as actor
 import pickle
 
 
 class ActorMain(core.ActorMainBase):
-    def create_env_and_agents_pool(self, gather_id: int = None, actor_id: int = None):
+    def main(self, gather_id, actor_id, role, queue_gather2actor, queue_actor2gather):
+        pass
+
+    def create_env_and_agents_pool(self):
         if cfg.SELF_PLAY:
             return self._create_self_play_env_and_agents_pool()
         else:
@@ -47,5 +50,8 @@ class ActorMain(core.ActorMainBase):
         )
         return env, agents_pool
 
-
+    def create_actor_evaluator(self):
+        env, agents_pool = self.create_env_and_agents_pool()
+        actor_evaluator = actor.ActorEvaluator(env, agents_pool, num_episodes=10, process_bar=True)
+        return actor_evaluator
 

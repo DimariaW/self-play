@@ -453,3 +453,164 @@ class IMPALA(ActorCriticBase):
         # when tensor in cuda device, we must delete the variable manually !
         del batch
         return train_info
+
+
+class PPO(ActorCriticBase):
+    """
+    reward_info 结构应为 {”reward1": float, "reward2": float, "reward3": float}
+    value_info 结构应为 {”reward1": float, "reward2": float, "reward3": float}
+
+
+    Critic 三种更新方式：
+    1. actor端计算gae 得到value_target_info  learner端认为value_target_info为ground truth, 用来和value_info一起计算loss
+    2. actor端计算gae 得到value_target_info, learner仅有value_target_info的最后一个时间步作为bootstrap
+    3. 用value_info.detach() 计算gae
+    同时加clip,对比和old policy value 的差距，若差的比较多且value_target也差的比较多，截断？
+
+    actor 三种更新方式：
+    1. naive: loss = - clamp(rho, 1-epsilon, 1+epsilon)
+    2. standard: loss = -min(clamp(rho, 1-epsilon, 1+epsilon)*ADV, rho*ADV)
+    3. dual_clip: loss = max(clamp(rho, 0, ceil)*ADV, -loss_standard)
+
+    vtrace_key: 用value_info 和 reward计算 adv
+    upgo_key: 用value_info 和 reward计算adv
+
+    注意样本最后一个时间维度的done一定为True
+    """
+    def __init__(self,
+                 model: ModelValueLogit,
+                 queue_senders: List[mp.Queue],
+                 tensor_receiver: Receiver,
+                 lr: float = 2e-3, gamma: float = 0.99, lbd: float = 0.98, vf: float = 0.5, ef: float = 1e-3,
+                 tensorboard_dir: str = None,
+                 sleep_seconds: float = None,
+                 # multi-reward
+                 critic_key: Union[List[str], Tuple[str]] = (),
+                 critic_update_method: Literal["behavior", "behavior_bootstrap", "target"] = "target",
+                 using_critic_update_method_adv=False,
+                 actor_key: Union[List[str], Tuple[str]] = (),
+                 actor_update_method: Literal["naive", "standard", "dual_clip"] = "standard"
+                 ):
+
+        super().__init__(model, queue_senders, tensor_receiver,
+                         lr, gamma, lbd, vf, ef, tensorboard_dir, sleep_seconds)
+
+        assert set(critic_key).issuperset(set(actor_key))
+        self.critic_key = critic_key
+        self.critic_update_method = critic_update_method
+        self.using_critic_update_method_adv = using_critic_update_method_adv
+        self.actor_key = actor_key
+        self.actor_update_method = actor_update_method
+
+    def learn(self):
+        self.model.train()
+        mean_behavior_model_index, batch = self.tensor_receiver.recv()
+        """
+        batch key: observation, behavior_log_prob, action, reward_info, done, only_bootstrap
+              optional(key): value_target_info(ground truth value target), 
+                             adv_info, 
+                             value_info(behavior value info), 
+        """
+        obs = batch["observation"]  # shape(B, T, ...)
+        behavior_log_prob = batch['behavior_log_prob']  # shape(B, T, ...) or shape(B, T, ..., N)
+        action = batch["action"]  # shape(B, T, ...) or shape(B, T, ..., N)
+        reward_info: Dict[str, torch.Tensor] = batch["reward_info"]
+        done = batch["done"]  # shape(B, T)
+        bootstrap_mask = 1. - batch["only_bootstrap"]  # 0表示被mask掉, shape(B, T)
+
+        info = self.model(obs)
+        value_info = info["value_info"]  # shape: B*T or B*T*N
+        action_logits = info["logits"]   # shape: value_dim or value_dim + (action_dim, num_actions)
+
+        # get log prob
+        action_log_prob = torch.log_softmax(action_logits, dim=-1)
+        action_log_prob = action_log_prob.gather(-1, action.unsqueeze(-1)).squeeze(-1)
+        log_rho = action_log_prob - behavior_log_prob  # shape: value_dim or value_dim + action_dim
+        rho = torch.exp(log_rho)
+        clipped_rho = torch.clip(rho, 1-0.1, 1+0.1)
+
+        # for debugging
+        rho_nograd = rho.detach()
+        clipped_ratio = torch.mean((rho_nograd < 1-0.1).type(torch.float32) + (rho_nograd > 1+0.1).type(torch.float32))
+        clipped_ratio = clipped_ratio.item()
+
+        actor_losses = {}
+        critic_losses = {}
+        actor_loss = 0
+        critic_loss = 0
+
+        action_head_mask = 1. - batch["illegal_action_head"] if "illegal_action_head" in batch else 1.
+
+        if self.critic_update_method == "behavior":
+            """
+            batch 中存在真value_target值
+            """
+            value_target_info = batch["value_target_info"]
+            for key in self.critic_key:
+                value = value_info[key]
+                value_target = value_target_info[key]
+                critic_loss_local = self.critic_loss_fn(value*bootstrap_mask, value_target*bootstrap_mask)
+                critic_loss += critic_loss_local
+                critic_losses[key + "_critic_loss"] = critic_loss_local.item()
+
+        elif self.critic_update_method == "behavior_bootstrap":
+            value_target_info = batch["value_target_info"]
+            for key in self.critic_key:
+                value = value_info[key]
+                value_target = value_target_info[key]
+                value_nograd = value.detach()*bootstrap_mask + value_target*(1.-bootstrap_mask)
+                reward = reward_info[key]
+                gae_adv, gae_value = self.gae(value_nograd, reward, done, bootstrap_mask, self.gamma, self.lbd)
+                critic_loss_local = self.critic_loss_fn(value*bootstrap_mask, gae_value*bootstrap_mask)
+                critic_loss += critic_loss_local
+                critic_losses[key + "_critic_loss"] = critic_loss_local.item()
+                if self.using_critic_update_method_adv:
+                    batch["adv_info"][key] = gae_adv
+
+        elif self.critic_update_method == "target":
+            for key in self.critic_key:
+                value = value_info[key]
+                value_nograd = value.detach()
+                reward = reward_info[key]
+                gae_adv, gae_value = self.gae(value_nograd, reward, done, bootstrap_mask, self.gamma, self.lbd)
+                critic_loss_local = self.critic_loss_fn(value*bootstrap_mask, gae_value*bootstrap_mask)
+                critic_loss += critic_loss_local
+                critic_losses[key + "_critic_loss"] = critic_loss_local.item()
+                if self.using_critic_update_method_adv:
+                    batch["adv_info"][key] = gae_adv
+
+        adv_info = batch["adv_info"]
+        if self.actor_update_method == "naive":
+            for key in self.actor_key:
+                adv = adv_info[key].view(*rho.shape[:2], *([1]*len(rho.shape[2:])))
+                actor_loss_local = -torch.sum(action_head_mask*clipped_rho*adv)
+                actor_loss += actor_loss_local
+                actor_losses[key + "_actor_loss"] = actor_loss_local.item()
+        elif self.actor_update_method == "standard":
+            for key in self.actor_key:
+                adv = adv_info[key].view(*rho.shape[:2], *([1] * len(rho.shape[2:])))
+                actor_loss_local = - torch.sum(action_head_mask*torch.minimum(rho*adv, clipped_rho*adv))
+                actor_loss += actor_loss_local
+                actor_losses[key + "_actor_loss"] = actor_loss_local.item()
+        elif self.actor_update_method == "dual_clip":
+            for key in self.actor_key:
+                adv = adv_info[key].view(*rho.shape[:2], *([1] * len(rho.shape[2:])))
+                actor_loss_local = - torch.sum(
+                    action_head_mask*torch.maximum(torch.minimum(rho*adv, clipped_rho*adv), torch.clip(rho, 0, 3)*adv)
+                )
+                actor_loss += actor_loss_local
+                actor_losses[key + "_actor_loss"] = actor_loss_local.item()
+
+        entropy = torch.sum(action_head_mask * torch.distributions.Categorical(logits=action_logits).entropy())
+
+        loss = actor_loss + self.vf * critic_loss - self.ef * entropy
+
+        self.gradient_clip_and_optimize(self.optimizer, loss, self.model.parameters(), 40.0)
+
+        train_info = dict(**actor_losses, **critic_losses,
+                          entropy=entropy.item(),
+                          data_staleness=self.index.item() - mean_behavior_model_index,
+                          clipped_ratio=clipped_ratio)
+        # when tensor in cuda device, we must delete the variable manually !
+        del batch
+        return train_info

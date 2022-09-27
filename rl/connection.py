@@ -147,6 +147,7 @@ class QueueCommunicatorBase:
         self.conns.add(conn)
 
     def disconnect(self, conn):
+        conn.close()
         self.conns.discard(conn)
         logging.info(f'disconnected one connection, current connection num is {self.connection_count()}')
 
@@ -160,9 +161,11 @@ class QueueCommunicatorBase:
             except BrokenPipeError:
                 self.disconnect(conn)
             except TimeoutError:
-                conn.close()
                 self.disconnect(conn)
-                continue
+            except socket.timeout:
+                self.disconnect(conn)
+            except pickle.PickleError:
+                self.disconnect(conn)
 
     def _recv_thread(self):
         while True:
@@ -177,7 +180,12 @@ class QueueCommunicatorBase:
                     self.disconnect(conn)
                     continue
                 except TimeoutError:
-                    conn.close()
+                    self.disconnect(conn)
+                    continue
+                except socket.timeout:
+                    self.disconnect(conn)
+                    continue
+                except pickle.PickleError:
                     self.disconnect(conn)
                     continue
 
