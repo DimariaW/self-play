@@ -29,7 +29,7 @@ class ActorMain(actor.ActorMainBase):
         actor_sampler = actor.ActorSampler(env, agents_pool,
                                            num_steps=CONFIG["num_steps"], get_full_episodes=CONFIG["get_full_episodes"],
                                            postprocess_traj=actor.PostProcess.get_cal_gae_func(gamma_infos=0.99,
-                                                                                               lbd_infos=0.98))
+                                                                                               lbd_infos=1))
         return actor_sampler
 
     @staticmethod

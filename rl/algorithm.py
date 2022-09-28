@@ -527,11 +527,10 @@ class PPO(ActorCriticBase):
         action_log_prob = action_log_prob.gather(-1, action.unsqueeze(-1)).squeeze(-1)
         log_rho = action_log_prob - behavior_log_prob  # shape: value_dim or value_dim + action_dim
         rho = torch.exp(log_rho)
-        clipped_rho = torch.clip(rho, 1-0.1, 1+0.1)
 
         # for debugging
         rho_nograd = rho.detach()
-        clipped_ratio = torch.mean((rho_nograd < 1-0.1).type(torch.float32) + (rho_nograd > 1+0.1).type(torch.float32))
+        clipped_ratio = torch.mean((rho_nograd < 1-0.2).type(torch.float32) + (rho_nograd > 1+0.2).type(torch.float32))
         clipped_ratio = clipped_ratio.item()
 
         actor_losses = {}
@@ -583,20 +582,28 @@ class PPO(ActorCriticBase):
         if self.actor_update_method == "naive":
             for key in self.actor_key:
                 adv = adv_info[key].view(*rho.shape[:2], *([1]*len(rho.shape[2:])))
+                clipped_rho = torch.clip(rho, 1-0.2, 1+0.2)
+
                 actor_loss_local = -torch.sum(action_head_mask*clipped_rho*adv)
                 actor_loss += actor_loss_local
                 actor_losses[key + "_actor_loss"] = actor_loss_local.item()
         elif self.actor_update_method == "standard":
             for key in self.actor_key:
                 adv = adv_info[key].view(*rho.shape[:2], *([1] * len(rho.shape[2:])))
+                clipped_rho = torch.clip(rho, 1 - 0.2, 1 + 0.2)
+
                 actor_loss_local = - torch.sum(action_head_mask*torch.minimum(rho*adv, clipped_rho*adv))
                 actor_loss += actor_loss_local
                 actor_losses[key + "_actor_loss"] = actor_loss_local.item()
         elif self.actor_update_method == "dual_clip":
             for key in self.actor_key:
                 adv = adv_info[key].view(*rho.shape[:2], *([1] * len(rho.shape[2:])))
+                clipped_rho_positive_adv = torch.clip(rho, 0, 1+0.2)
+                clipped_rho_negative_adv = torch.clip(rho, 1-0.2, 3)
+
                 actor_loss_local = - torch.sum(
-                    action_head_mask*torch.maximum(torch.minimum(rho*adv, clipped_rho*adv), torch.clip(rho, 0, 3)*adv)
+                    action_head_mask*(
+                            (adv >= 0) * clipped_rho_positive_adv*adv + (adv < 0) * clipped_rho_negative_adv*adv)
                 )
                 actor_loss += actor_loss_local
                 actor_losses[key + "_actor_loss"] = actor_loss_local.item()
