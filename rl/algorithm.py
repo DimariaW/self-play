@@ -374,7 +374,7 @@ class IMPALA(ActorCriticBase):
 
         # for debugging
         bs_mask_unsqueezed = bootstrap_mask.view(*rho.shape[:2], *([1]*len(rho.shape[2:])))
-        mean_rho = (torch.sum(rho * bs_mask_unsqueezed) / torch.sum(bs_mask_unsqueezed)).item()
+        mean_rho_diff_1 = (torch.sum(torch.abs(rho-1) * bs_mask_unsqueezed) / torch.sum(bs_mask_unsqueezed)).item()
 
         # vtrace clipped rho
         clipped_rho = torch.clamp(rho, 0, 1)  # clip_rho_threshold := 1)  rho shape: B*T*N, B*T
@@ -449,7 +449,7 @@ class IMPALA(ActorCriticBase):
         train_info = dict(**actor_losses, **critic_losses,
                           entropy=entropy.item(),
                           data_staleness=self.index.item() - mean_behavior_model_index,
-                          rho=mean_rho)
+                          rho_diff_1=mean_rho_diff_1)
         # when tensor in cuda device, we must delete the variable manually !
         del batch
         return train_info

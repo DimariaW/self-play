@@ -16,16 +16,16 @@ class MemoryMain(core.MemoryMainBase):
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
         if CONFIG["memory_type"] == "list":
-            traj_list = mem.TrajListMP(maxlen=3000, queue_sender=queue_sender,
-                                       batch_size=64, priority_replay=False,
+            traj_list = mem.TrajListMP(maxlen=CONFIG["maxlen"], queue_sender=queue_sender,
+                                       batch_size=CONFIG["batch_size"], priority_replay=CONFIG["priority_replay"],
                                        to_tensor=True, device=device,
                                        # batch_maker args
                                        num_batch_maker=2,
                                        logger_file_dir=os.path.join(self.logger_file_dir, "batch_maker"),
                                        logger_file_level=self.logger_file_level)
         else:
-            traj_list = mem.TrajQueueMP(maxlen=8, queue_sender=queue_sender,
-                                        batch_size=16, use_bz2=CONFIG["use_bz2"],
+            traj_list = mem.TrajQueueMP(maxlen=CONFIG["maxlen"], queue_sender=queue_sender,
+                                        batch_size=CONFIG["batch_size"], use_bz2=CONFIG["use_bz2"],
                                         to_tensor=True, device=device,
                                         # batch_maker args
                                         num_batch_maker=2,
@@ -50,7 +50,7 @@ class LearnerMain(core.LearnerMainBase):
                             critic_key=["reward"],
                             vtrace_key=["reward"],
                             critic_update_method=CONFIG["critic_update_method"],
-                            upgo_key=CONFIG["upgo_key"],
+                            upgo_key=["reward"] if CONFIG["use_upgo"] else (),
                             sleep_seconds=CONFIG["sleep_seconds"]
                             )
         impala.run()

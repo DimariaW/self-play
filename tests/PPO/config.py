@@ -3,7 +3,7 @@ from tests.env_models import ENV_MODEL_CONFIG
 CONFIG = [  # name: env-model-actor-memory-alg
     {
         "name": "[cartpole]-[fc]-[full_episodes_rollout_length_16]-"
-                "[3000_no_priority_batch_size_64]-[ppo_critic_behavior_bs_update_gae_actor_standard]",
+                "[3000_no_priority_batch_size_64]-[ppo_critic_behavior_bs_update_gae_actor_dual_clip]",
         # env model
         "env_model_config": ENV_MODEL_CONFIG["cartpole-fc"],
         # actor
@@ -20,7 +20,7 @@ CONFIG = [  # name: env-model-actor-memory-alg
         # PPO
         "critic_update_method": ["behavior", "behavior_bootstrap", "target"][1],
         "using_critic_update_method_adv": True,
-        "actor_update_method": ["naive", "standard", "dual_clip"][1],
+        "actor_update_method": ["naive", "standard", "dual_clip"][2],
         "sleep_seconds": 0,
         "metrics_dir": "./log/cartpole/"
     },
