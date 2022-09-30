@@ -166,6 +166,9 @@ class QueueCommunicatorBase:
                 self.disconnect(conn)
             except pickle.PickleError:
                 self.disconnect(conn)
+            except Exception:
+                self.disconnect(conn)
+                continue
 
     def _recv_thread(self):
         while True:
@@ -186,6 +189,9 @@ class QueueCommunicatorBase:
                     self.disconnect(conn)
                     continue
                 except pickle.PickleError:
+                    self.disconnect(conn)
+                    continue
+                except Exception:
                     self.disconnect(conn)
                     continue
 
