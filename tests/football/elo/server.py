@@ -20,7 +20,7 @@ def main():
     log_dir = "./log/elo_infos/server.txt"
     utils.set_process_logger(file_path=log_dir)
 
-    dir_name = "./log/self_play_feature_checkpoints_impala/models"
+    dir_name = "./log/self_play_feature_checkpoints_impala/deprecated"
     # dir_name = "../weights"
     models_pool = load_models_from_dir(dir_name)
     models_pool["builtin_ai", None] = None

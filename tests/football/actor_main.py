@@ -1,18 +1,19 @@
 from tests.football.actor import ActorMain
+from tests.football.config import CONFIG, LEAGUE_ADDRESS, MEMORY_ADDRESS, MODEL_SERVER_ADDRESS
 from rl.core import open_gather
-
-import tests.football.config as cfg
-
+import logging
 
 if __name__ == "__main__":
-    logger_file_dir = f"./log/{cfg.NAME}/gathers/"
-    actor_main = ActorMain(num_steps=32, logger_file_dir=logger_file_dir)
 
-    open_gather(num_gathers=18, roles='sampler', num_actors=3,
-                league_address=cfg.LEAGUE_ADDRESS,
-                memory_server_address=cfg.MEMORY_ADDRESS,
-                model_server_address=cfg.MODEL_ADDRESS,
+    logger_file_dir = f"./log/{CONFIG['name']}/actors/"
+    actor_main = ActorMain(logger_file_dir=logger_file_dir, logger_file_level=logging.INFO)
+
+    open_gather(num_gathers=3,
+                roles=["sampler"]*3,  # + ["evaluator"],
+                num_actors=[2, 2, 1],
+                league_address=LEAGUE_ADDRESS,
+                memory_server_address=MEMORY_ADDRESS,
+                model_server_address=MODEL_SERVER_ADDRESS,
                 actor_main=actor_main,
-                use_bz2=cfg.USE_BZ2,
-                self_play=cfg.SELF_PLAY,
-                logger_file_dir=logger_file_dir)
+                logger_file_dir=logger_file_dir,
+                logger_file_level=logging.INFO)

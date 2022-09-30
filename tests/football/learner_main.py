@@ -1,19 +1,21 @@
+from tests.football.config import CONFIG, MEMORY_ADDRESS, MODEL_SERVER_ADDRESS, LEAGUE_ADDRESS
 from tests.football.learner import MemoryMain, LearnerMain, LeagueMain, ModelServerMain
 from rl.core import train_main
-import tests.football.config as cfg
+import logging
 
 if __name__ == '__main__':
-    mr_main = MemoryMain(port=cfg.MEMORY_ADDRESS[1], logger_file_dir=f"./log/{cfg.NAME}/")
 
-    model_server_main = ModelServerMain(port=cfg.MODEL_ADDRESS[1], name="model_server",
-                                        logger_file_dir=f"./log/{cfg.NAME}/")
+    mm_main = MemoryMain(MEMORY_ADDRESS[1], f"./log/{CONFIG['name']}/", logger_file_level=logging.INFO)
 
-    league_main = LeagueMain(port=cfg.LEAGUE_ADDRESS[1], name="league",
-                             logger_file_dir=f"./log/{cfg.NAME}/")
+    model_server_main = ModelServerMain(MODEL_SERVER_ADDRESS[1],
+                                        logger_file_dir=f"./log/{CONFIG['name']}/", logger_file_level=logging.INFO)
 
-    leaner_main = LearnerMain(logger_file_dir=f"./log/{cfg.NAME}/")
+    league_main = LeagueMain(LEAGUE_ADDRESS[1],
+                             logger_file_dir=f"./log/{CONFIG['name']}/", logger_file_level=logging.INFO)
 
-    train_main(leaner_main, [mr_main], [model_server_main, league_main], memory_buffer_length=8)
+    leaner_main = LearnerMain(f"./log/{CONFIG['name']}/", logger_file_level=logging.INFO)
+
+    train_main(leaner_main, [mm_main], [model_server_main, league_main], memory_buffer_length=8)
 
 
 

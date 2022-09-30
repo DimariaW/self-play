@@ -1426,7 +1426,7 @@ if __name__ == "__main__":
     pass
     """
     
-    from tests.football.models import feature_model, tamak_model
+    from tests.football.deprecated import feature_model, tamak_model
     from rl.agent import IMPALAAgent
     import tqdm
     import copy

@@ -1,93 +1,80 @@
-import pickle
 import torch
 import multiprocessing as mp
 import os
+import pickle
 
 import rl.core as core
 import rl.memory as mem
 import rl.algorithm as alg
 import rl.league as lg
 
-import logging
 
-from tests.football.models import feature_model
-from tests.football.config import USE_BZ2, SELF_PLAY
+from tests.football.config import CONFIG
 
 
 class MemoryMain(core.MemoryMainBase):
     def main(self, queue_sender: mp.Queue):
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        logging.info(f"the data will be in {device}")
 
-        traj_queue = mem.TrajQueueMP(maxlen=64,
-                                     queue_sender=queue_sender,
-                                     batch_size=64,
-                                     use_bz2=USE_BZ2,
-                                     to_tensor=True,
-                                     device=device,
-                                     num_batch_maker=8,
-                                     logger_file_dir=os.path.join(self.logger_file_dir, "batch_maker"),
-                                     logger_file_level=logging.DEBUG)
+        if CONFIG["memory_type"] == "list":
+            traj_list = mem.TrajListMP(maxlen=CONFIG["maxlen"], queue_sender=queue_sender,
+                                       batch_size=CONFIG["batch_size"], priority_replay=CONFIG["priority_replay"],
+                                       to_tensor=True, device=device,
+                                       # batch_maker args
+                                       num_batch_maker=2,
+                                       logger_file_dir=os.path.join(self.logger_file_dir, "batch_maker"),
+                                       logger_file_level=self.logger_file_level)
+        else:
+            traj_list = mem.TrajQueueMP(maxlen=16, queue_sender=queue_sender,
+                                        batch_size=16, use_bz2=CONFIG["use_bz2"],
+                                        to_tensor=True, device=device,
+                                        # batch_maker args
+                                        num_batch_maker=2,
+                                        logger_file_dir=os.path.join(self.logger_file_dir, "batch_maker"),
+                                        logger_file_level=self.logger_file_level)
 
-        memory_server = mem.MemoryServer(traj_queue, self.port, actor_num=None)
+        memory_server = mem.MemoryServer(traj_list, self.port, actor_num=None)
         memory_server.run()
 
 
 class LearnerMain(core.LearnerMainBase):
     def main(self, queue_receiver: mp.Queue, queue_senders):
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        logging.info(f"the model will be in {device}")
+        tensor_receiver = self.create_receiver(queue_receiver)
 
-        tensor_receiver = self.create_receiver(queue_receiver, to_tensor=False)
+        env_model_config = CONFIG["env_model_config"]
+        model = env_model_config["model"]().to(device)
 
-        model = feature_model.FeatureModel().to(device)
-        model_weights = pickle.load(open("./tests/football/weights/feature_870000.pickle", "rb"))
-        model.set_weights(model_weights)
-        logging.info("successfully loads weight from pretrained!")
+        impala = alg.PPO(model, queue_senders, tensor_receiver,
+                         lr=1e-4, gamma=0.993, lbd=1, vf=1, ef=1e-3,
+                         tensorboard_dir=os.path.join(self.logger_file_dir, "learn_info"),
+                         sleep_seconds=CONFIG["sleep_seconds"],
+                         critic_key=["checkpoints"],
+                         critic_update_method=CONFIG["critic_update_method"],
+                         using_critic_update_method_adv=CONFIG["using_critic_update_method_adv"],
+                         actor_key=["checkpoints"],
+                         actor_update_method=CONFIG["actor_update_method"],
+                         )
 
-        impala = alg.IMPALA(model,
-                            queue_senders,
-                            tensor_receiver,
-                            # lr=0.00019896, gamma=0.993, lbd=1, vf=0.5, ef=0.00087453,
-                            lr=0.0001, gamma=0.993, lbd=1, vf=1, ef=0.001,
-                            # lr=0.0001, gamma=0.993, lbd=1, vf=1, ef=0.0002,
-                            tensorboard_dir=os.path.join(self.logger_file_dir, "train_info"),
-                            vtrace_key=["checkpoints"],
-                            # upgo_key=["checkpoints"],
-                            )
+        weights = pickle.load(open("./env_models/football/weights/feature_self-play_870000.pickle", "rb"))
+        impala.set_weights(weights, 10000)
         impala.run()
 
 
-class ModelServerMain(core.ModelServerMainBase):
+class ModelServerMain(core.ModelMainBase):
     def main(self, queue_receiver: mp.Queue):
         queue_receiver = self.create_receiver(queue_receiver)
-        model_server = lg.ModelServer(queue_receiver, self.port, use_bz2=USE_BZ2, cache_weights_intervals=1)
+        model_server = lg.ModelServer(queue_receiver, self.port, use_bz2=CONFIG["use_bz2"], cache_weights_intervals=1)
         model_server.run()
 
 
-class LeagueMain(core.ModelServerMainBase):
+class LeagueMain(core.LeagueMainBase):
     def main(self, queue_receiver: mp.Queue):
         queue_receiver = self.create_receiver(queue_receiver)
-        if SELF_PLAY:
-            """
-        league = lg.ModelServer4RecordAndEval(queue_receiver, self.port, use_bz2=USE_BZ2,
-                                              cache_weights_intervals=10000,
-                                              save_weights_dir=os.path.join(self.logger_file_dir, "model_weights"),
-                                              tensorboard_dir=os.path.join(self.logger_file_dir, "metrics"))
-            """
-            league = lg.League(queue_receiver,
-                               self.port,
-                               use_bz2=USE_BZ2,
-                               cache_weights_intervals=30000,
-                               save_weights_dir=os.path.join(self.logger_file_dir, "model_weights"),
-                               tensorboard_dir=os.path.join(self.logger_file_dir, "metrics"))
-            league.run()
-        else:
-            league = lg.ModelServer4Evaluation(queue_receiver, self.port, use_bz2=USE_BZ2,
-                                               cache_weights_intervals=10000,
-                                               save_weights_dir=os.path.join(self.logger_file_dir, "model_weights"),
-                                               tensorboard_dir=os.path.join(self.logger_file_dir, "metrics"))
-            league.run()
 
-
+        league = lg.ModelServer4Evaluation(queue_receiver, self.port, use_bz2=CONFIG["use_bz2"],
+                                           cache_weights_intervals=10000,
+                                           save_weights_dir=os.path.join(self.logger_file_dir, "model_weights"),
+                                           tensorboard_dir=os.path.join(CONFIG["metrics_dir"], CONFIG["name"]))
+        league.run()
 
