@@ -151,6 +151,17 @@ class Actor:
                      f"current episode_infos is : {self.current_episode_info}, "
                      f"ending info is {env_info}")
 
+        rewards_per_agent = {}
+        keys_for_delete = []
+        for key, value in self.current_episode_info.items():
+            if isinstance(value, np.ndarray):
+                for index, reward in enumerate(value):
+                    rewards_per_agent[f"{key}_{index}"] = reward
+                keys_for_delete.append(key)
+        for key in keys_for_delete:
+            del self.current_episode_info[key]
+        self.current_episode_info.update(rewards_per_agent)
+
         meta_info = env_info
         meta_info.update(model_id=self.agent.model_id)
         self.current_episode_info.update(meta_info=meta_info)

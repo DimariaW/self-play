@@ -29,7 +29,10 @@ class ActorMain(actor.ActorMainBase):
         actor_sampler = actor.ActorSampler(env, agents_pool,
                                            num_steps=CONFIG["num_steps"], get_full_episodes=CONFIG["get_full_episodes"],
                                            postprocess_traj=actor.PostProcess.get_cal_gae_func(gamma_infos=0.99,
-                                                                                               lbd_infos=1))
+                                                                                               lbd_infos=1),
+                                           postprocess_meta_info=lambda meta_info:
+                                           {"eval_reward": meta_info.get("eval_reward", 0)}
+                                           )
         return actor_sampler
 
     @staticmethod
@@ -40,6 +43,9 @@ class ActorMain(actor.ActorMainBase):
 
         agent = PPOAgent(model)
         agents_pool = {agent.model_id[0]: agent}
-        actor_evaluator = actor.ActorEvaluator(env, agents_pool, num_episodes=1)
+        actor_evaluator = actor.ActorEvaluator(env, agents_pool, num_episodes=1,
+                                               postprocess_meta_info=lambda meta_info:
+                                               {"eval_reward": meta_info.get("eval_reward", 0)}
+                                               )
 
         return actor_evaluator

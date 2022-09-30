@@ -140,15 +140,15 @@ def get_element_from_batch(x: Union[List, Dict, Tuple, np.ndarray, torch.Tensor]
         raise NotImplementedError(f"do not support get element from type: {type(x)}")
 
 
-def get_batch_size(x: Union[List, Dict, Tuple, np.ndarray, torch.Tensor]):
+def get_batch_size(x: Union[List, Dict, Tuple, np.ndarray, torch.Tensor], axis=0):
     if isinstance(x, (np.ndarray, torch.Tensor)):
-        return len(x)
+        return x.shape[axis]
 
     elif isinstance(x, (list, tuple)):
-        return get_batch_size(x[0])
+        return get_batch_size(x[0], axis)
 
     elif isinstance(x, dict):
-        return get_batch_size(x[list(x.keys())[0]])
+        return get_batch_size(x[list(x.keys())[0]], axis)
 
     else:
         raise NotImplementedError(f"do not support get element from type: {type(x)}")
