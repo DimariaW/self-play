@@ -1,11 +1,11 @@
-from tests.env_models import ENV_MODEL_CONFIG
+from env_models import cartpole
 
 CONFIG = [
     {
-        "name": "[cartpole]-[fc]-[full_episodes_rollout_length_16]-"
-                "[3000_no_priority_batch_size_64]-[impala_critic_behavior_no_upgo]",
+        "name": "[MountainCarContinuous]-[FC]-[full_episodes_rollout_length_16]-"
+                "[3000_no_priority_batch_size_64]-[impala_critic_behavior_upgo]",
         # env model
-        "env_model_config": ENV_MODEL_CONFIG["cartpole-fc"],
+        "env_model_config": cartpole.ENV_MODELS[["CartPole-FC", "MountainCarContinuous-FC", "LunarLanderContinuous-FC"][0]],
         # actor
         "num_steps": 32,
         "get_full_episodes": True,
@@ -19,15 +19,14 @@ CONFIG = [
         "batch_size": 64,
         # PPO
         "critic_update_method": ["behavior", "behavior_bootstrap", "target"][0],
-        "use_upgo": False,
+        "use_upgo": True,
         "sleep_seconds": 0,
-        "metrics_dir": "./log/cartpole/"
+        "metrics_dir": "./log/MountainCarContinuous/"
     },
     {
-        "name": "[cartpole]-[fc]-[32_steps]-"
-                "[queue_batch_size_16]-[impala_critic_target_no_upgo]",
+        "name": "[CartPole]-[FC]-[32_steps]-[queue_batch_size_16]-[impala_critic_target_no_upgo]",
         # env model
-        "env_model_config": ENV_MODEL_CONFIG["cartpole-fc"],
+        "env_model_config": cartpole.ENV_MODELS["CartPole-FC"],
         # actor
         "num_steps": 32,
         "get_full_episodes": False,
@@ -48,6 +47,6 @@ CONFIG = [
 ][0]
 
 
-LEAGUE_ADDRESS = ("172.18.237.19", 7779)
-MEMORY_ADDRESS = ("172.18.237.19", 7777)
-MODEL_SERVER_ADDRESS = ("172.18.237.19", 7778)
+LEAGUE_ADDRESS = ("192.168.43.157", 7779)
+MEMORY_ADDRESS = ("192.168.43.157", 7777)
+MODEL_SERVER_ADDRESS = ("192.168.43.157", 7778)

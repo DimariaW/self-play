@@ -10,16 +10,22 @@ import pickle
 
 class ActorMain(core.ActorMainBase):
     def main(self, gather_id, actor_id, role, queue_gather2actor, queue_actor2gather):
-        pass
-
-    def create_env_and_agents_pool(self):
-        if cfg.SELF_PLAY:
-            return self._create_self_play_env_and_agents_pool()
-        else:
-            return self._create_single_opponent_env_and_agents_pool()
+        if role == "sampler":
+            actor_sampler = self.create_sampler_actor()
+            actor_manager = actor.ActorSamplerManager(actor_id, actor_sampler, queue_gather2actor, queue_actor2gather,
+                                                      use_bz2=CONFIG["use_bz2"],
+                                                      compress_step_length=CONFIG["compressed_step_length"],
+                                                      self_play=CONFIG["self-play"])
+            actor_manager.run()
+        elif role == "evaluator":
+            actor_evaluator = self.create_evaluator_actor()
+            actor_manager = actor.ActorEvaluatorManager(actor_id, actor_evaluator, queue_gather2actor,
+                                                        queue_actor2gather,
+                                                        use_bz2=CONFIG["use_bz2"], self_play=CONFIG["self-play"])
+            actor_manager.run()
 
     @staticmethod
-    def _create_self_play_env_and_agents_pool():
+    def create_opponent_env_and_agents_pool():
         agents_pool = {
             "builtin_ai": feature_model.BuiltinAI(name="builtin_ai"),
             "tamak": tamak_model.TamakAgent(model=tamak_model.FootballNet(name="tamak")),
@@ -34,7 +40,7 @@ class ActorMain(core.ActorMainBase):
         return env, agents_pool
 
     @staticmethod
-    def _create_single_opponent_env_and_agents_pool():
+    def create_tamak_opponent_env_and_agents_pool():
         agents_pool = {
             "feature": IMPALAAgent(model=feature_model.FeatureModel("feature"))
         }
@@ -50,8 +56,6 @@ class ActorMain(core.ActorMainBase):
         )
         return env, agents_pool
 
-    def create_actor_evaluator(self):
-        env, agents_pool = self.create_env_and_agents_pool()
-        actor_evaluator = actor.ActorEvaluator(env, agents_pool, num_episodes=10, process_bar=True)
-        return actor_evaluator
+
+
 

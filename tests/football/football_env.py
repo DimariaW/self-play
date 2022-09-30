@@ -345,14 +345,14 @@ class Observation2Feature:
         return np.transpose(team_feature, (2, 0, 1))
 
     @staticmethod
-    def preprocess_obs(obs, action_history, num_left_players=11, num_right_players=11):
+    def preprocess_obs(obs, action_history, num_left_players=11, num_right_players=11, half_step=1500):
         Observation2Feature._preprocess_obs(obs)
         illegal_action_mask = Observation2Feature.create_illegal_action_masks(obs)
         ball_zone = Observation2Feature.encode_ball_which_zone(obs)
         ball_feature, player_feature = Observation2Feature.get_ball_and_player_feature(obs, ball_zone,
                                                                                        illegal_action_mask)
         team_feature = Observation2Feature.get_team_feature(obs, num_left_players, num_right_players)
-        game_feature = Observation2Feature.get_game_feature(obs, half_step=1500)
+        game_feature = Observation2Feature.get_game_feature(obs, half_step=half_step)
         return {
             "team_feature": team_feature,
             "ball_feature": ball_feature,
@@ -1171,6 +1171,60 @@ class FeatureEnv4MultiAgent(gym.Wrapper):
                for observation, action_history in zip(obs, self.action_histories)]
 
         return utils.batchify(obs, unsqueeze=0), reward_infos, done, truncated, info
+
+
+#%%
+class EasyAIEnv(gym.Wrapper):
+    def __init__(self):
+        env = gfootball_env.create_environment(env_name="11_vs_11_easy_stochastic",
+                                               render=False,
+                                               representation="raw",
+                                               rewards="scoring,checkpoints",
+                                               number_of_left_players_agent_controls=1,
+                                               number_of_right_players_agent_controls=0
+                                               )
+        super().__init__(env)
+        self.preprocess_func = Observation2Feature.preprocess_obs
+        self.action_history = collections.deque(maxlen=8)
+        self.scoring = 0
+
+    def reset(self):
+        obs = self.env.reset()
+        for _ in range(random.randint(0, 50)):
+            obs, reward, done, info = self.env.step(0)
+
+        self.action_history.extend([0] * 8)
+        feature = self.preprocess_func(obs[0], self.action_history)
+        self.scoring = 0
+        return feature
+
+    def step(self, action):
+        self.action_history.append(action)
+
+        obs, reward, done, info = self.env.step(action)
+
+        obs: list
+        reward: list
+        done: bool
+        info: dict
+
+        reward_infos = {"checkpoints": reward, "scoring": info["score_reward"]}
+
+        feature = self.preprocess_func(obs[0], self.action_history)
+        self.scoring += info["score_reward"]
+
+        truncated = False
+        if done:
+            if self.scoring == 0:
+                info["win"] = 0.5
+            elif self.scoring > 0:
+                info["win"] = 1
+            else:
+                info["win"] = 0
+
+            info["opponent_id"] = "easy_ai"
+
+        return feature, reward_infos, done, truncated, info
 
 
 """

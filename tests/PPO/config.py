@@ -1,11 +1,11 @@
-from tests.env_models import ENV_MODEL_CONFIG
+from env_models import cartpole
 
 CONFIG = [  # name: env-model-actor-memory-alg
     {
         "name": "[cartpole]-[fc]-[full_episodes_rollout_length_16]-"
                 "[3000_no_priority_batch_size_64]-[ppo_critic_behavior_bs_update_gae_actor_dual_clip]",
         # env model
-        "env_model_config": ENV_MODEL_CONFIG["cartpole-fc"],
+        "env_model_config": cartpole.ENV_MODELS[["CartPole-FC", "MountainCarContinuous-FC", "LunarLanderContinuous-FC"][2]],
         # actor
         "num_steps": 32,
         "get_full_episodes": True,
@@ -20,13 +20,13 @@ CONFIG = [  # name: env-model-actor-memory-alg
         # PPO
         "critic_update_method": ["behavior", "behavior_bootstrap", "target"][1],
         "using_critic_update_method_adv": True,
-        "actor_update_method": ["naive", "standard", "dual_clip"][2],
+        "actor_update_method": ["naive", "standard", "dual_clip"][0],
         "sleep_seconds": 0,
         "metrics_dir": "./log/cartpole/"
     },
 ][0]
 
 
-LEAGUE_ADDRESS = ("172.18.237.19", 7779)
-MEMORY_ADDRESS = ("172.18.237.19", 7777)
-MODEL_SERVER_ADDRESS = ("172.18.237.19", 7778)
+LEAGUE_ADDRESS = ("192.168.43.157", 7779)
+MEMORY_ADDRESS = ("192.168.43.157", 7777)
+MODEL_SERVER_ADDRESS = ("192.168.43.157", 7778)

@@ -395,7 +395,10 @@ class IMPALA(ActorCriticBase):
             for key in self.critic_key:
                 value = value_info[key]
                 value_target = value_target_info[key]
-                critic_loss_local = self.critic_loss_fn(value*bootstrap_mask, value_target*bootstrap_mask)
+
+                bs_mask_unsqueezed = bootstrap_mask.view(*value.shape[:2], *([1] * len(value.shape[2:])))
+
+                critic_loss_local = self.critic_loss_fn(value*bs_mask_unsqueezed, value_target*bs_mask_unsqueezed)
                 critic_loss += critic_loss_local
                 critic_losses[key + "_critic_loss"] = critic_loss_local.item()
 
@@ -404,20 +407,26 @@ class IMPALA(ActorCriticBase):
             for key in self.critic_key:
                 value = value_info[key]
                 value_target = value_target_info[key]
-                value_nograd = value.detach()*bootstrap_mask + value_target*(1.-bootstrap_mask)
+
+                bs_mask_unsqueezed = bootstrap_mask.view(*value.shape[:2], *([1] * len(value.shape[2:])))
+
+                value_nograd = value.detach()*bs_mask_unsqueezed + value_target*(1.-bs_mask_unsqueezed)
                 reward = reward_info[key]
                 gae_adv, gae_value = self.gae(value_nograd, reward, done, bootstrap_mask, self.gamma, self.lbd)
-                critic_loss_local = self.critic_loss_fn(value*bootstrap_mask, gae_value*bootstrap_mask)
+                critic_loss_local = self.critic_loss_fn(value*bs_mask_unsqueezed, gae_value*bs_mask_unsqueezed)
                 critic_loss += critic_loss_local
                 critic_losses[key + "_critic_loss"] = critic_loss_local.item()
 
         elif self.critic_update_method == "target":
             for key in self.critic_key:
                 value = value_info[key]
+
+                bs_mask_unsqueezed = bootstrap_mask.view(*value.shape[:2], *([1] * len(value.shape[2:])))
+
                 value_nograd = value.detach()
                 reward = reward_info[key]
                 gae_adv, gae_value = self.gae(value_nograd, reward, done, bootstrap_mask, self.gamma, self.lbd)
-                critic_loss_local = self.critic_loss_fn(value*bootstrap_mask, gae_value*bootstrap_mask)
+                critic_loss_local = self.critic_loss_fn(value*bs_mask_unsqueezed, gae_value*bs_mask_unsqueezed)
                 critic_loss += critic_loss_local
                 critic_losses[key + "_critic_loss"] = critic_loss_local.item()
 
@@ -435,6 +444,10 @@ class IMPALA(ActorCriticBase):
             reward = reward_info[key]
 
             upgo_adv, upgo_value = self.upgo(value_nograd, reward, done, bootstrap_mask, self.gamma, self.lbd)
+
+            shape_adv = upgo_adv.shape
+            shape_action = clipped_rho.shape
+            upgo_adv = upgo_adv.view(*shape_adv, *([1]*(len(shape_action)-len(shape_adv))))
 
             actor_loss_local = torch.sum(-action_head_mask * action_log_prob * clipped_rho * upgo_adv)
             actor_loss += actor_loss_local
@@ -547,8 +560,9 @@ class PPO(ActorCriticBase):
             value_target_info = batch["value_target_info"]
             for key in self.critic_key:
                 value = value_info[key]
+                bs_mask_unsqueezed = bootstrap_mask.view(*value.shape[:2], *([1] * len(value.shape[2:])))
                 value_target = value_target_info[key]
-                critic_loss_local = self.critic_loss_fn(value*bootstrap_mask, value_target*bootstrap_mask)
+                critic_loss_local = self.critic_loss_fn(value*bs_mask_unsqueezed, value_target*bs_mask_unsqueezed)
                 critic_loss += critic_loss_local
                 critic_losses[key + "_critic_loss"] = critic_loss_local.item()
 
@@ -556,11 +570,12 @@ class PPO(ActorCriticBase):
             value_target_info = batch["value_target_info"]
             for key in self.critic_key:
                 value = value_info[key]
+                bs_mask_unsqueezed = bootstrap_mask.view(*value.shape[:2], *([1] * len(value.shape[2:])))
                 value_target = value_target_info[key]
-                value_nograd = value.detach()*bootstrap_mask + value_target*(1.-bootstrap_mask)
+                value_nograd = value.detach()*bs_mask_unsqueezed + value_target*(1.-bs_mask_unsqueezed)
                 reward = reward_info[key]
                 gae_adv, gae_value = self.gae(value_nograd, reward, done, bootstrap_mask, self.gamma, self.lbd)
-                critic_loss_local = self.critic_loss_fn(value*bootstrap_mask, gae_value*bootstrap_mask)
+                critic_loss_local = self.critic_loss_fn(value*bs_mask_unsqueezed, gae_value*bs_mask_unsqueezed)
                 critic_loss += critic_loss_local
                 critic_losses[key + "_critic_loss"] = critic_loss_local.item()
                 if self.using_critic_update_method_adv:
@@ -569,10 +584,11 @@ class PPO(ActorCriticBase):
         elif self.critic_update_method == "target":
             for key in self.critic_key:
                 value = value_info[key]
+                bs_mask_unsqueezed = bootstrap_mask.view(*value.shape[:2], *([1] * len(value.shape[2:])))
                 value_nograd = value.detach()
                 reward = reward_info[key]
                 gae_adv, gae_value = self.gae(value_nograd, reward, done, bootstrap_mask, self.gamma, self.lbd)
-                critic_loss_local = self.critic_loss_fn(value*bootstrap_mask, gae_value*bootstrap_mask)
+                critic_loss_local = self.critic_loss_fn(value*bs_mask_unsqueezed, gae_value*bs_mask_unsqueezed)
                 critic_loss += critic_loss_local
                 critic_losses[key + "_critic_loss"] = critic_loss_local.item()
                 if self.using_critic_update_method_adv:
@@ -581,7 +597,12 @@ class PPO(ActorCriticBase):
         adv_info = batch["adv_info"]
         if self.actor_update_method == "naive":
             for key in self.actor_key:
-                adv = adv_info[key].view(*rho.shape[:2], *([1]*len(rho.shape[2:])))
+                adv = adv_info[key]
+
+                shape_adv = adv.shape
+                shape_action = rho.shape
+                adv = adv.view(*shape_adv, *([1] * (len(shape_action) - len(shape_adv))))
+
                 clipped_rho = torch.clip(rho, 1-0.2, 1+0.2)
 
                 actor_loss_local = -torch.sum(action_head_mask*clipped_rho*adv)
@@ -589,7 +610,12 @@ class PPO(ActorCriticBase):
                 actor_losses[key + "_actor_loss"] = actor_loss_local.item()
         elif self.actor_update_method == "standard":
             for key in self.actor_key:
-                adv = adv_info[key].view(*rho.shape[:2], *([1] * len(rho.shape[2:])))
+                adv = adv_info[key]
+
+                shape_adv = adv.shape
+                shape_action = rho.shape
+                adv = adv.view(*shape_adv, *([1] * (len(shape_action) - len(shape_adv))))
+
                 clipped_rho = torch.clip(rho, 1 - 0.2, 1 + 0.2)
 
                 actor_loss_local = - torch.sum(action_head_mask*torch.minimum(rho*adv, clipped_rho*adv))
@@ -597,7 +623,12 @@ class PPO(ActorCriticBase):
                 actor_losses[key + "_actor_loss"] = actor_loss_local.item()
         elif self.actor_update_method == "dual_clip":
             for key in self.actor_key:
-                adv = adv_info[key].view(*rho.shape[:2], *([1] * len(rho.shape[2:])))
+                adv = adv_info[key]
+
+                shape_adv = adv.shape
+                shape_action = rho.shape
+                adv = adv.view(*shape_adv, *([1] * (len(shape_action) - len(shape_adv))))
+
                 clipped_rho_positive_adv = torch.clip(rho, 0, 1+0.2)
                 clipped_rho_negative_adv = torch.clip(rho, 1-0.2, 3)
 

@@ -21,8 +21,8 @@ class ActorMain(actor.ActorMainBase):
     @staticmethod
     def create_sampler_actor():
         env_model_config = CONFIG["env_model_config"]
-        env = env_model_config["env_class"](**env_model_config["env_args"])
-        model = env_model_config["model_class"](**env_model_config["model_args"])
+        env = env_model_config["env"]()
+        model = env_model_config["model"]()
 
         agent = PPOAgent(model)
         agents_pool = {agent.model_id[0]: agent}

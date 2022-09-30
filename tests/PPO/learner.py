@@ -42,7 +42,7 @@ class LearnerMain(core.LearnerMainBase):
         tensor_receiver = self.create_receiver(queue_receiver)
 
         env_model_config = CONFIG["env_model_config"]
-        model = env_model_config["model_class"](**env_model_config["model_args"]).to(device)
+        model = env_model_config["model"]().to(device)
 
         impala = alg.PPO(model, queue_senders, tensor_receiver,
                          lr=1e-4, gamma=0.99, lbd=0.98, vf=0.5, ef=1e-4,

@@ -1,3 +1,4 @@
+
 import rl.actor as actor
 from tests.impala.config import CONFIG
 from rl.agent import PPOAgent
@@ -21,25 +22,29 @@ class ActorMain(actor.ActorMainBase):
     @staticmethod
     def create_sampler_actor():
         env_model_config = CONFIG["env_model_config"]
-        env = env_model_config["env_class"](**env_model_config["env_args"])
-        model = env_model_config["model_class"](**env_model_config["model_args"])
+        env = env_model_config["env"]()
+        model = env_model_config["model"]()
 
         agent = PPOAgent(model)
         agents_pool = {agent.model_id[0]: agent}
         actor_sampler = actor.ActorSampler(env, agents_pool,
                                            num_steps=CONFIG["num_steps"], get_full_episodes=CONFIG["get_full_episodes"],
                                            postprocess_traj=actor.PostProcess.get_cal_gae_func(gamma_infos=0.99,
-                                                                                               lbd_infos=1))
+                                                                                               lbd_infos=1),
+                                           postprocess_meta_info=lambda meta_info:
+                                           {"eval_reward": meta_info.get("eval_reward", 0)})
         return actor_sampler
 
     @staticmethod
     def create_evaluator_actor():
         env_model_config = CONFIG["env_model_config"]
-        env = env_model_config["env_class"](**env_model_config["env_args"])
-        model = env_model_config["model_class"](**env_model_config["model_args"])
+        env = env_model_config["env"]()
+        model = env_model_config["model"]()
 
         agent = PPOAgent(model)
         agents_pool = {agent.model_id[0]: agent}
-        actor_evaluator = actor.ActorEvaluator(env, agents_pool, num_episodes=1)
+        actor_evaluator = actor.ActorEvaluator(env, agents_pool, num_episodes=1,
+                                               postprocess_meta_info=lambda meta_info:
+                                               {"eval_reward": meta_info.get("eval_reward", 0)})
 
         return actor_evaluator
