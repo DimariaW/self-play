@@ -21,7 +21,7 @@ class MemoryMain(core.MemoryMainBase):
                                        batch_size=CONFIG["batch_size"], priority_replay=CONFIG["priority_replay"],
                                        to_tensor=True, device=device,
                                        # batch_maker args
-                                       num_batch_maker=2,
+                                       num_batch_maker=16,
                                        logger_file_dir=os.path.join(self.logger_file_dir, "batch_maker"),
                                        logger_file_level=self.logger_file_level)
         else:
@@ -29,7 +29,7 @@ class MemoryMain(core.MemoryMainBase):
                                         batch_size=64, use_bz2=CONFIG["use_bz2"],
                                         to_tensor=True, device=device,
                                         # batch_maker args
-                                        num_batch_maker=2,
+                                        num_batch_maker=8,
                                         logger_file_dir=os.path.join(self.logger_file_dir, "batch_maker"),
                                         logger_file_level=self.logger_file_level)
 

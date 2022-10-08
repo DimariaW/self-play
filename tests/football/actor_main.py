@@ -8,8 +8,8 @@ if __name__ == "__main__":
     logger_file_dir = f"./log/{CONFIG['name']}/actors/"
     actor_main = ActorMain(logger_file_dir=logger_file_dir, logger_file_level=logging.INFO)
 
-    open_gather(num_gathers=1,
-                roles=["sampler"]*1,  # + ["evaluator"],
+    open_gather(num_gathers=28,
+                roles=["sampler"]*28,  # + ["evaluator"],
                 num_actors=[2],
                 league_address=LEAGUE_ADDRESS,
                 memory_server_address=MEMORY_ADDRESS,
