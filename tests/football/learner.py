@@ -14,14 +14,14 @@ from tests.football.config import CONFIG
 
 class MemoryMain(core.MemoryMainBase):
     def main(self, queue_sender: mp.Queue):
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cpu")
 
         if CONFIG["memory_type"] == "list":
             traj_list = mem.TrajListMP(maxlen=CONFIG["maxlen"], queue_sender=queue_sender,
                                        batch_size=CONFIG["batch_size"], priority_replay=CONFIG["priority_replay"],
                                        to_tensor=True, device=device,
                                        # batch_maker args
-                                       num_batch_maker=16,
+                                       num_batch_maker=36,
                                        logger_file_dir=os.path.join(self.logger_file_dir, "batch_maker"),
                                        logger_file_level=self.logger_file_level)
         else:
@@ -40,7 +40,7 @@ class MemoryMain(core.MemoryMainBase):
 class LearnerMain(core.LearnerMainBase):
     def main(self, queue_receiver: mp.Queue, queue_senders):
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        tensor_receiver = self.create_receiver(queue_receiver)
+        tensor_receiver = self.create_receiver(queue_receiver, to_tensor=True, device=device)
 
         env_model_config = CONFIG["env_model_config"]
         model = env_model_config["model"]().to(device)

@@ -3,7 +3,7 @@ from env_models import football
 CONFIG = [  # name: env-model-actor-memory-alg
     {
         "name": "[vs_tamak]-[feature]-[full_episodes_rollout_length_16]-"
-                "[3000_no_priority_batch_size_64]-[ppo_critic_behavior_update_gae_actor_dual_clip]",
+                "[3000_no_priority_batch_size_512]-[ppo_critic_behavior_update_gae_actor_dual_clip]",
         # env model
         "env_model_config": football.ENV_MODELS[["multi_agent_academy_3_vs_1_with_keeper", "vs_tamak"][1]],
         # actor

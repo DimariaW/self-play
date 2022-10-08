@@ -47,7 +47,7 @@ class LearnerMain(core.LearnerMainBase):
         impala = alg.PPO(model, queue_senders, tensor_receiver,
                          lr=1e-4, gamma=0.99, lbd=0.98, vf=0.5, ef=1e-4,
                          tensorboard_dir=os.path.join(self.logger_file_dir, "learn_info"),
-                         sleep_seconds=CONFIG["sleep_seconds"],
+                         max_update_num_per_seconds=CONFIG["max_update_num_per_seconds"],
                          critic_key=["reward"],
                          critic_update_method=CONFIG["critic_update_method"],
                          using_critic_update_method_adv=CONFIG["using_critic_update_method_adv"],

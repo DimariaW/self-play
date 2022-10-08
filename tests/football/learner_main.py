@@ -15,7 +15,7 @@ if __name__ == '__main__':
 
     leaner_main = LearnerMain(f"./log/{CONFIG['name']}/", logger_file_level=logging.INFO)
 
-    train_main(leaner_main, [mm_main], [model_server_main, league_main], memory_buffer_length=2)
+    train_main(leaner_main, [mm_main], [model_server_main, league_main], memory_buffer_length=1)
 
 
 

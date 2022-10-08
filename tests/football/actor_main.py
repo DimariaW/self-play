@@ -10,7 +10,7 @@ if __name__ == "__main__":
 
     open_gather(num_gathers=28,
                 roles=["sampler"]*28,  # + ["evaluator"],
-                num_actors=[2],
+                num_actors=2,
                 league_address=LEAGUE_ADDRESS,
                 memory_server_address=MEMORY_ADDRESS,
                 model_server_address=MODEL_SERVER_ADDRESS,
