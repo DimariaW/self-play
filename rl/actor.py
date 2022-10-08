@@ -19,7 +19,17 @@ from tqdm import tqdm
 
 #%%
 class Env(Protocol):
-    def reset(self, *args, **kwargs) -> Any:
+    def reset(self) -> Any:
+        # return obs
+        ...
+
+    def step(self, action) -> Tuple[Any, Dict[str, float], bool, bool, Dict[str, Any]]:
+        # return next_obs, reward_infos, done, truncated, info
+        ...
+
+
+class OpponentEnv(Protocol):
+    def reset(self, model_id: Tuple[str, Optional[int]], opponent_id: Tuple[str, Optional[int]], opponent_weights) -> Any:
         # return obs
         ...
 
@@ -54,7 +64,7 @@ class Actor:
             do something
     """
     def __init__(self,
-                 env: Env,
+                 env: Union[Env, OpponentEnv],
                  agents_pool: Dict[str, Agent],
                  # for sample
                  num_steps: int = 0,
@@ -147,9 +157,6 @@ class Actor:
         1. record according to num_episodes, current_episode_infos and ending_info
         """
         self.total_episodes += 1
-        logging.info(f"num_episodes is : {self.total_episodes}, "
-                     f"current episode_infos is : {self.current_episode_info}, "
-                     f"ending info is {env_info}")
 
         rewards_per_agent = {}
         keys_for_delete = []
@@ -167,6 +174,10 @@ class Actor:
         self.current_episode_info.update(meta_info=meta_info)
         if self.postprocess_meta_info is not None:
             self.current_episode_info.update(self.postprocess_meta_info(meta_info))
+
+        logging.info(f"num_episodes is : {self.total_episodes}, "
+                     f"current episode_infos is : {self.current_episode_info}, "
+                     f"ending info is {env_info}")
 
     def _update_process_bar(self):
         if self.process_bar is not None:
@@ -435,7 +446,7 @@ class ActorSampler:
     def reset_env(self, *args, **kwargs):
         self._actor.reset_env(*args, **kwargs)
 
-    def reset_agent(self, model_id: Tuple[str, int], model_weights: Mapping[str, np.ndarray]):
+    def reset_agent(self, model_id: Tuple[str, int], model_weights: Optional[Mapping[str, np.ndarray]]):
         self._actor.reset_agent(model_id, model_weights)
 
     def sample(self):
@@ -460,7 +471,7 @@ class ActorEvaluator:
     def reset_env(self, *args, **kwargs):
         self._actor.reset_env(*args, **kwargs)
 
-    def reset_agent(self, model_id: Tuple[str, int], model_weights: Mapping[str, np.ndarray]):
+    def reset_agent(self, model_id: Tuple[str, Optional[int]], model_weights: Optional[Mapping[str, np.ndarray]]):
         self._actor.reset_agent(model_id, model_weights)
 
     def predict(self):

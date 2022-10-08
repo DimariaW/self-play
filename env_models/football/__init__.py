@@ -106,6 +106,21 @@ class EnvModelFactory:
 
         return env
 
+    @staticmethod
+    def create_battle():
+        env = Env("11_vs_11_kaggle", 1, 1)
+
+        agent, preprocess_func = create_agent_and_preprocess_func("feature")
+        ai, ai_preprocess_func = create_agent_and_preprocess_func("builtin_ai")
+        tamak, tamak_preprocess_func = create_agent_and_preprocess_func("tamak")
+
+        env.add_agent("feature", agent,
+                      process_func=lambda obs, action_history: preprocess_func(obs, action_history, 11, 11, 1500))
+        env.add_agent("builtin_ai", ai, process_func=ai_preprocess_func)
+        env.add_agent("tamak", tamak, process_func=tamak_preprocess_func)
+
+        return env
+
 
 ENV_MODELS = {
     "multi_agent_academy_3_vs_1_with_keeper": {
@@ -122,6 +137,10 @@ ENV_MODELS = {
     },
     "vs_easy_ai": {
         "env": EnvModelFactory.create_vs_easy_ai,
+        "model": lambda: FeatureModel(name="feature")
+    },
+    "battle": {
+        "env": EnvModelFactory.create_battle,
         "model": lambda: FeatureModel(name="feature")
     }
 }

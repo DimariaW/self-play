@@ -25,8 +25,8 @@ class MemoryMain(core.MemoryMainBase):
                                        logger_file_dir=os.path.join(self.logger_file_dir, "batch_maker"),
                                        logger_file_level=self.logger_file_level)
         else:
-            traj_list = mem.TrajQueueMP(maxlen=16, queue_sender=queue_sender,
-                                        batch_size=16, use_bz2=CONFIG["use_bz2"],
+            traj_list = mem.TrajQueueMP(maxlen=64, queue_sender=queue_sender,
+                                        batch_size=64, use_bz2=CONFIG["use_bz2"],
                                         to_tensor=True, device=device,
                                         # batch_maker args
                                         num_batch_maker=2,
@@ -46,9 +46,9 @@ class LearnerMain(core.LearnerMainBase):
         model = env_model_config["model"]().to(device)
 
         impala = alg.PPO(model, queue_senders, tensor_receiver,
-                         lr=1e-4, gamma=0.993, lbd=1, vf=1, ef=1e-3,
+                         lr=1e-4, gamma=0.993, lbd=0.95, vf=1, ef=1e-3,
                          tensorboard_dir=os.path.join(self.logger_file_dir, "learn_info"),
-                         sleep_seconds=CONFIG["sleep_seconds"],
+                         max_update_num_per_seconds=CONFIG["max_update_num_per_seconds"],
                          critic_key=["checkpoints"],
                          critic_update_method=CONFIG["critic_update_method"],
                          using_critic_update_method_adv=CONFIG["using_critic_update_method_adv"],
@@ -56,8 +56,8 @@ class LearnerMain(core.LearnerMainBase):
                          actor_update_method=CONFIG["actor_update_method"],
                          )
 
-        weights = pickle.load(open("./env_models/football/weights/feature_self-play_870000.pickle", "rb"))
-        impala.set_weights(weights, 10000)
+        weights = pickle.load(open("./env_models/football/weights/feature_vs_tamak_70.pickle", "rb"))
+        impala.set_weights(weights, 0)
         impala.run()
 
 
@@ -73,7 +73,7 @@ class LeagueMain(core.LeagueMainBase):
         queue_receiver = self.create_receiver(queue_receiver)
 
         league = lg.ModelServer4Evaluation(queue_receiver, self.port, use_bz2=CONFIG["use_bz2"],
-                                           cache_weights_intervals=10000,
+                                           cache_weights_intervals=1000,
                                            save_weights_dir=os.path.join(self.logger_file_dir, "model_weights"),
                                            tensorboard_dir=os.path.join(CONFIG["metrics_dir"], CONFIG["name"]))
         league.run()

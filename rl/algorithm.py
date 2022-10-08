@@ -255,7 +255,7 @@ class ActorCriticBase(Algorithm):
                  tensor_receiver: Receiver,
                  lr: float, gamma: float, lbd: float, vf: float, ef: float,
                  tensorboard_dir: str,
-                 sleep_seconds: float):
+                 max_update_num_per_seconds: int):
         super().__init__()
         self.model = model
         # owing to some bug in pytorch 1.12, this statement is not correct, do not need it.
@@ -278,7 +278,7 @@ class ActorCriticBase(Algorithm):
         if tensorboard_dir is not None:
             self.sw = SummaryWriter(logdir=tensorboard_dir)
         # 5. sleep_seconds
-        self.sleep_seconds = sleep_seconds
+        self.max_update_num_per_seconds = max_update_num_per_seconds
 
     def set_weights(self, weights, index=None):
         self.model.set_weights(weights)
@@ -293,11 +293,13 @@ class ActorCriticBase(Algorithm):
 
     def run(self):
         tag = "learn_info"
+        update_intervals = 1/self.max_update_num_per_seconds
 
         for queue_sender in self.queue_senders:
             send_with_stop_flag(queue_sender, False, (self.index, self.model))
 
         while True:
+            beg = time.time()
             learn_info = self.learn()
             self.index += 1
 
@@ -309,7 +311,9 @@ class ActorCriticBase(Algorithm):
                         self.sw.add_scalar(f"{tag}/{key}", value, index)
 
             # to sleep a few seconds
-            time.sleep(self.sleep_seconds)
+            end = time.time()
+            sleep_time = max(update_intervals-(end-beg), 0)
+            time.sleep(sleep_time)
 
 
 class IMPALA(ActorCriticBase):
@@ -333,7 +337,7 @@ class IMPALA(ActorCriticBase):
                  tensor_receiver: Receiver,
                  lr: float = 2e-3, gamma: float = 0.99, lbd: float = 0.98, vf: float = 0.5, ef: float = 1e-3,
                  tensorboard_dir: str = None,
-                 sleep_seconds: float = None,
+                 max_update_num_per_seconds: int = None,
                  # multi-reward
                  critic_key: Union[List[str], Tuple[str]] = (),
                  critic_update_method: Literal["behavior", "behavior_bootstrap", "target"] = "target",
@@ -342,7 +346,7 @@ class IMPALA(ActorCriticBase):
                  ):
 
         super().__init__(model, queue_senders, tensor_receiver,
-                         lr, gamma, lbd, vf, ef, tensorboard_dir, sleep_seconds)
+                         lr, gamma, lbd, vf, ef, tensorboard_dir, max_update_num_per_seconds)
 
         assert set(critic_key).issuperset(set(vtrace_key))
         assert set(critic_key).issuperset(set(upgo_key))
@@ -496,7 +500,7 @@ class PPO(ActorCriticBase):
                  tensor_receiver: Receiver,
                  lr: float = 2e-3, gamma: float = 0.99, lbd: float = 0.98, vf: float = 0.5, ef: float = 1e-3,
                  tensorboard_dir: str = None,
-                 sleep_seconds: float = None,
+                 max_update_num_per_seconds: int = None,
                  # multi-reward
                  critic_key: Union[List[str], Tuple[str]] = (),
                  critic_update_method: Literal["behavior", "behavior_bootstrap", "target"] = "target",
@@ -506,7 +510,7 @@ class PPO(ActorCriticBase):
                  ):
 
         super().__init__(model, queue_senders, tensor_receiver,
-                         lr, gamma, lbd, vf, ef, tensorboard_dir, sleep_seconds)
+                         lr, gamma, lbd, vf, ef, tensorboard_dir, max_update_num_per_seconds)
 
         assert set(critic_key).issuperset(set(actor_key))
         self.critic_key = critic_key
