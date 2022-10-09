@@ -30,16 +30,19 @@ def test_vs_tamak():
     env = env_model_config["env"]()
     model = env_model_config["model"]()
     agent = PPOAgent(model)
-    weights = pickle.load(open("./tests/test_env_models/feature_360000.pickle", "rb"))
-    agent.set_weights(weights, 36000)
+    weights = pickle.load(open("./env_models/football/weights/feature_vs_tamak_70.pickle", "rb"))
+    agent.set_weights(weights, 32000)
     agents_pool = {agent.model_id[0]: agent}
     actor = ActorEvaluator(env, agents_pool, num_episodes=10, process_bar=True)
 
-    actor.reset_agent(("feature", 36000), weights)
+    actor.reset_agent(("feature", 32000), weights)
     actor.reset_env()
+    win_num = 0
     for cmd, info in actor.predict():
         print(info)
+        win_num += info["meta_info"]["win"]
         actor.reset_env()
+    print(win_num)
 
 
 def test_battle():
@@ -85,5 +88,5 @@ def test_battle():
 
 if __name__ == "__main__":
     # test_vs_hard_ai()
-    # test_vs_tamak()
-    test_battle()
+    test_vs_tamak()
+    # test_battle()

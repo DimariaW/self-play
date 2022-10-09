@@ -29,7 +29,7 @@ class ActorMain(actor.ActorMainBase):
         actor_sampler = actor.ActorSampler(env, agents_pool,
                                            num_steps=CONFIG["num_steps"], get_full_episodes=CONFIG["get_full_episodes"],
                                            postprocess_traj=actor.PostProcess.get_cal_gae_func(gamma_infos=0.993,
-                                                                                               lbd_infos=0.95),
+                                                                                               lbd_infos=1),
                                            postprocess_meta_info=lambda meta_info:
                                            {"win": meta_info.get("win", 0),
                                             "model_index": meta_info.get("model_id", ("feature", 0))[1]}

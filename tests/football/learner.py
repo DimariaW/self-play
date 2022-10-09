@@ -14,22 +14,22 @@ from tests.football.config import CONFIG
 
 class MemoryMain(core.MemoryMainBase):
     def main(self, queue_sender: mp.Queue):
-        device = torch.device("cpu")
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
         if CONFIG["memory_type"] == "list":
             traj_list = mem.TrajListMP(maxlen=CONFIG["maxlen"], queue_sender=queue_sender,
                                        batch_size=CONFIG["batch_size"], priority_replay=CONFIG["priority_replay"],
-                                       to_tensor=True, device=device,
+                                       to_tensor=True, device=torch.device("cpu"),
                                        # batch_maker args
                                        num_batch_maker=36,
                                        logger_file_dir=os.path.join(self.logger_file_dir, "batch_maker"),
                                        logger_file_level=self.logger_file_level)
         else:
-            traj_list = mem.TrajQueueMP(maxlen=64, queue_sender=queue_sender,
-                                        batch_size=64, use_bz2=CONFIG["use_bz2"],
+            traj_list = mem.TrajQueueMP(maxlen=CONFIG["maxlen"], queue_sender=queue_sender,
+                                        batch_size=CONFIG["batch_size"], use_bz2=CONFIG["use_bz2"],
                                         to_tensor=True, device=device,
                                         # batch_maker args
-                                        num_batch_maker=8,
+                                        num_batch_maker=36,
                                         logger_file_dir=os.path.join(self.logger_file_dir, "batch_maker"),
                                         logger_file_level=self.logger_file_level)
 
@@ -45,19 +45,30 @@ class LearnerMain(core.LearnerMainBase):
         env_model_config = CONFIG["env_model_config"]
         model = env_model_config["model"]().to(device)
 
-        impala = alg.PPO(model, queue_senders, tensor_receiver,
-                         lr=1e-4, gamma=0.993, lbd=0.95, vf=1, ef=1e-3,
-                         tensorboard_dir=os.path.join(self.logger_file_dir, "learn_info"),
-                         max_update_num_per_seconds=CONFIG["max_update_num_per_seconds"],
-                         critic_key=["checkpoints"],
-                         critic_update_method=CONFIG["critic_update_method"],
-                         using_critic_update_method_adv=CONFIG["using_critic_update_method_adv"],
-                         actor_key=["checkpoints"],
-                         actor_update_method=CONFIG["actor_update_method"],
-                         )
+        if "use_upgo" in CONFIG:
+            impala = alg.IMPALA(model, queue_senders, tensor_receiver,
+                                lr=1e-4, gamma=0.993, lbd=1, vf=1, ef=1e-3,
+                                tensorboard_dir=os.path.join(self.logger_file_dir, "learn_info"),
+                                max_update_num_per_seconds=CONFIG["max_update_num_per_seconds"],
+                                critic_key=["checkpoints"],
+                                critic_update_method=CONFIG["critic_update_method"],
+                                vtrace_key=["checkpoints"],
+                                upgo_key=["checkpoints"] if CONFIG["use_upgo"] else (),
+                                )
+        else:
+            impala = alg.PPO(model, queue_senders, tensor_receiver,
+                             lr=1e-4, gamma=0.993, lbd=1, vf=1, ef=3e-3,
+                             tensorboard_dir=os.path.join(self.logger_file_dir, "learn_info"),
+                             max_update_num_per_seconds=CONFIG["max_update_num_per_seconds"],
+                             critic_key=["checkpoints"],
+                             critic_update_method=CONFIG["critic_update_method"],
+                             using_critic_update_method_adv=CONFIG["using_critic_update_method_adv"],
+                             actor_key=["checkpoints"],
+                             actor_update_method=CONFIG["actor_update_method"],
+                             )
 
-        weights = pickle.load(open("./env_models/football/weights/feature_vs_tamak_70.pickle", "rb"))
-        impala.set_weights(weights, 0)
+        # weights = pickle.load(open("./env_models/football/weights/feature_vs_tamak_70.pickle", "rb"))
+        # impala.set_weights(weights, 0)
         impala.run()
 
 
@@ -73,7 +84,7 @@ class LeagueMain(core.LeagueMainBase):
         queue_receiver = self.create_receiver(queue_receiver)
 
         league = lg.ModelServer4Evaluation(queue_receiver, self.port, use_bz2=CONFIG["use_bz2"],
-                                           cache_weights_intervals=1000,
+                                           cache_weights_intervals=50000,
                                            save_weights_dir=os.path.join(self.logger_file_dir, "model_weights"),
                                            tensorboard_dir=os.path.join(CONFIG["metrics_dir"], CONFIG["name"]))
         league.run()

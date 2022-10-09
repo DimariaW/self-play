@@ -40,7 +40,7 @@ CONFIG = [
         # PPO
         "critic_update_method": ["behavior", "behavior_bootstrap", "target"][2],
         "use_upgo": False,
-        "sleep_seconds": 0,
+        "max_update_num_per_seconds": 9999,
         "metrics_dir": "./log/cartpole/"
     },
 
